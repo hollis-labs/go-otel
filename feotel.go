@@ -6,7 +6,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/hollis-labs/otel/internal"
+	"github.com/hollis-labs/go-otel/internal"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"

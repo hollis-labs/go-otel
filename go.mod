@@ -1,4 +1,4 @@
-module github.com/hollis-labs/otel
+module github.com/hollis-labs/go-otel
 
 go 1.25.0
 

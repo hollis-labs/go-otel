@@ -10,8 +10,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const tracerName = "github.com/hollis-labs/otel/genai"
-const meterName = "github.com/hollis-labs/otel/genai"
+const tracerName = "github.com/hollis-labs/go-otel/genai"
+const meterName = "github.com/hollis-labs/go-otel/genai"
 
 // ModelCallSpan creates a span following OTel GenAI semantic conventions.
 func ModelCallSpan(ctx context.Context, model, operation string) (context.Context, trace.Span) {

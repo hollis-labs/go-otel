@@ -8,8 +8,8 @@ import (
 	"log"
 	"time"
 
-	feotel "github.com/hollis-labs/otel"
-	"github.com/hollis-labs/otel/genai"
+	feotel "github.com/hollis-labs/go-otel"
+	"github.com/hollis-labs/go-otel/genai"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
