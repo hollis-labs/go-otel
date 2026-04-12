@@ -1,4 +1,4 @@
-// Package redaction provides span processing that strips sensitive attributes.
+// Package redaction provides denylist helpers for sensitive GenAI attributes.
 package redaction
 
 import (
@@ -9,7 +9,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// Denylist returns the default attribute keys that are redacted.
+// Denylist returns the default attribute keys that should be redacted by
+// downstream exporters or span wrappers.
 func Denylist() []string {
 	return []string{
 		"gen_ai.content.prompt",
@@ -17,19 +18,20 @@ func Denylist() []string {
 	}
 }
 
-// SpanProcessor returns a span processor that redacts sensitive attributes.
-// Redaction is enabled by default and can be disabled by setting
-// FE_OTEL_REDACT_PROMPTS=false.
+// ShouldRedact reports whether the provided attribute key should be removed
+// before export.
+func ShouldRedact(key string) bool {
+	return shouldRedact(os.Getenv("FE_OTEL_REDACT_PROMPTS"), key)
+}
+
+// SpanProcessor returns a processor shell that preserves the denylist
+// decision. It does not mutate spans because sdktrace.ReadOnlySpan is
+// immutable; callers should consult ShouldRedact before export.
 func SpanProcessor() sdktrace.SpanProcessor {
-	enabled := true
-	if v := os.Getenv("FE_OTEL_REDACT_PROMPTS"); strings.EqualFold(v, "false") {
-		enabled = false
+	return &redactProcessor{
+		enabled: shouldRedactEnabled(os.Getenv("FE_OTEL_REDACT_PROMPTS")),
+		deny:    denylistSet(),
 	}
-	deny := make(map[string]struct{}, len(Denylist()))
-	for _, k := range Denylist() {
-		deny[k] = struct{}{}
-	}
-	return &redactProcessor{enabled: enabled, deny: deny}
 }
 
 type redactProcessor struct {
@@ -40,10 +42,7 @@ type redactProcessor struct {
 func (r *redactProcessor) OnStart(_ context.Context, _ sdktrace.ReadWriteSpan) {}
 
 func (r *redactProcessor) OnEnd(s sdktrace.ReadOnlySpan) {
-	// ReadOnlySpan — we cannot mutate after the fact. The redaction processor
-	// is designed to be composed with a wrapping exporter or used as a signal
-	// that these attributes should not be exported. In practice, the deny-list
-	// is checked at export time.
+	// ReadOnlySpan is immutable; enforcement must happen in a wrapping exporter.
 	_ = s
 }
 
@@ -58,4 +57,25 @@ func (r *redactProcessor) ShouldRedact(key string) bool {
 	}
 	_, found := r.deny[key]
 	return found
+}
+
+func shouldRedactEnabled(v string) bool {
+	return !strings.EqualFold(v, "false")
+}
+
+func shouldRedact(envValue, key string) bool {
+	if !shouldRedactEnabled(envValue) {
+		return false
+	}
+	deny := denylistSet()
+	_, found := deny[key]
+	return found
+}
+
+func denylistSet() map[string]struct{} {
+	deny := make(map[string]struct{}, len(Denylist()))
+	for _, k := range Denylist() {
+		deny[k] = struct{}{}
+	}
+	return deny
 }

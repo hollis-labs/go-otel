@@ -86,7 +86,7 @@ func WithEnvironment(env string) Option {
 	return func(c *config) { c.environment = env }
 }
 
-// WithOTLPEndpoint overrides OTEL_EXPORTER_OTLP_ENDPOINT (default: "localhost:4317").
+// WithOTLPEndpoint overrides OTEL_EXPORTER_OTLP_ENDPOINT (default: "localhost:4318").
 func WithOTLPEndpoint(endpoint string) Option {
 	return func(c *config) { c.otlpEndpoint = endpoint }
 }
