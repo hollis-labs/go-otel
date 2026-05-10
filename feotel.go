@@ -1,5 +1,3 @@
-// Package feotel provides shared OpenTelemetry instrumentation for the
-// Fragments Engine suite of applications (Engine, Conduit, Cortex, Hadron, Nanite).
 package feotel
 
 import (
@@ -14,15 +12,16 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// Option configures the otel initialisation.
+// Option configures Init.
 type Option func(*config)
 
 type config struct {
-	serviceName    string
-	serviceVersion string
-	environment    string
-	otlpEndpoint   string
-	sampler        sdktrace.Sampler
+	serviceName      string
+	serviceVersion   string
+	serviceNamespace string
+	environment      string
+	otlpEndpoint     string
+	sampler          sdktrace.Sampler
 }
 
 // Init sets up a trace provider with an OTLP HTTP exporter.
@@ -30,11 +29,12 @@ type config struct {
 // The returned shutdown function flushes and shuts down the provider.
 func Init(ctx context.Context, opts ...Option) (shutdown func(context.Context) error, err error) {
 	cfg := config{
-		serviceName:    envOr("OTEL_SERVICE_NAME", ""),
-		serviceVersion: envOr("OTEL_SERVICE_VERSION", "unknown"),
-		environment:    "development",
-		otlpEndpoint:   envOr("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4318"),
-		sampler:        nil, // means AlwaysSample
+		serviceName:      envOr("OTEL_SERVICE_NAME", ""),
+		serviceVersion:   envOr("OTEL_SERVICE_VERSION", "unknown"),
+		serviceNamespace: envOr("OTEL_SERVICE_NAMESPACE", ""),
+		environment:      "development",
+		otlpEndpoint:     envOr("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4318"),
+		sampler:          nil, // means AlwaysSample
 	}
 	for _, o := range opts {
 		o(&cfg)
@@ -43,7 +43,7 @@ func Init(ctx context.Context, opts ...Option) (shutdown func(context.Context) e
 		cfg.sampler = sdktrace.AlwaysSample()
 	}
 
-	res, err := internal.NewResource(cfg.serviceName, cfg.serviceVersion, cfg.environment)
+	res, err := internal.NewResource(cfg.serviceName, cfg.serviceVersion, cfg.serviceNamespace, cfg.environment)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +84,13 @@ func WithServiceVersion(version string) Option {
 // WithEnvironment sets the deployment environment (default: "development").
 func WithEnvironment(env string) Option {
 	return func(c *config) { c.environment = env }
+}
+
+// WithServiceNamespace sets the service.namespace resource attribute. When
+// empty (the default), no service.namespace attribute is emitted. May also
+// be set via the OTEL_SERVICE_NAMESPACE environment variable.
+func WithServiceNamespace(namespace string) Option {
+	return func(c *config) { c.serviceNamespace = namespace }
 }
 
 // WithOTLPEndpoint overrides OTEL_EXPORTER_OTLP_ENDPOINT (default: "localhost:4318").

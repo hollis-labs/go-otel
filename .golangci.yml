@@ -1,25 +1,18 @@
-# Fragments Engine — Shared golangci-lint Configuration (v2 format)
-# Reference copy lives in mentat repo; copied to all 11 Go projects.
+# golangci-lint configuration (v2 format).
 #
 # Philosophy:
 #   - Catch real bugs, not style nits
-#   - Zero false-positive tolerance on CI
-#   - Use `--new` flag for gradual adoption on legacy code
 #   - Errors only — no warnings that train developers to ignore output
+#   - `--new` flag supported for gradual adoption on legacy code
 #
 # Usage:
-#   golangci-lint run --new          # lint only changed lines (adoption mode)
-#   golangci-lint run                # full lint (target state)
-#
-# Migrated from v1 format on 2026-03-14.
-# Note: run.timeout is ignored in v2 (no timeout by default).
-# Note: run.skip-files replaced by linters.exclusions.generated + rules.
+#   golangci-lint run --new          # lint only changed lines
+#   golangci-lint run                # full lint
 
 version: "2"
 
 run:
-  # Go version for the portfolio.
-  go: "1.25"
+  go: "1.26"
 
 # ---------------------------------------------------------------------------
 # Linter selection
