@@ -1,0 +1,39 @@
+# Go build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Vendored dependencies (use go modules instead)
+vendor/
+
+# Editor / OS scratch
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Coverage / profiling
+coverage.out
+coverage.html
+*.prof
+
+# Local agent / AI tooling — must never ship in this repo
+.agentrc/
+.claude/
+.cursor/
+.aider*
+agentrc.yaml
+agentrc.yml
+CLAUDE.md
+AGENTS.md
+AUDIT_RESULTS.md
