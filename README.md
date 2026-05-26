@@ -2,12 +2,15 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/hollis-labs/go-otel.svg)](https://pkg.go.dev/github.com/hollis-labs/go-otel)
 
-`go-otel` is an opinionated OpenTelemetry bootstrap for Go services. It wires
-up an OTLP HTTP trace exporter and (opt-in) metric exporter, installs W3C
-trace context + Baggage propagators, and provides small helpers for span
-taxonomy, GenAI semantic conventions, the `hollis.*` metric instrument set,
-HTTP and MCP-style propagation, slog trace correlation, and a denylist for
-sensitive prompt/completion attributes.
+`go-otel` is an opinionated OpenTelemetry bootstrap for Go services. It
+wires up an OTLP HTTP trace exporter and (opt-in) OTLP exporters for
+metrics and logs, installs W3C trace context + Baggage propagators, and
+provides small helpers for span taxonomy, GenAI semantic conventions, the
+`hollis.*` metric instrument set, an opinionated `Recorder` layer over
+those instruments, HTTP and MCP-style propagation, slog trace correlation
+(with optional OTLP log fan-out), Go-runtime metrics, resource detectors,
+signal-aware shutdown, and a denylist for sensitive prompt/completion
+attributes.
 
 The Go package name is `hotel` ("Hollis OTel"). The library promotes a
 `hollis.*` taxonomy for spans, attributes, and metrics emitted on the wire,
@@ -147,7 +150,7 @@ your own attribute schema.
 | `OTEL_SERVICE_NAME` | service.name resource attribute | `""` |
 | `OTEL_SERVICE_VERSION` | service.version resource attribute | `"unknown"` |
 | `OTEL_SERVICE_NAMESPACE` | service.namespace resource attribute (omitted when empty) | `""` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP exporter endpoint (used for both `/v1/traces` and, when metrics are enabled, `/v1/metrics`) | `localhost:4318` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP exporter endpoint (serves `/v1/traces` always, plus `/v1/metrics` when `WithMetricsEnabled` and `/v1/logs` when `WithLogsEnabled`) | `localhost:4318` |
 | `OTEL_METRIC_EXPORT_INTERVAL` | PeriodicReader interval for the metric exporter (read by the SDK; only meaningful when `WithMetricsEnabled`) | `15s` |
 | `OTEL_BLRP_SCHEDULE_DELAY` / `OTEL_BLRP_EXPORT_TIMEOUT` / `OTEL_BLRP_MAX_QUEUE_SIZE` / `OTEL_BLRP_MAX_EXPORT_BATCH_SIZE` | BatchProcessor tuning for the log exporter (read by the SDK; only meaningful when `WithLogsEnabled`) | SDK defaults |
 | `HOLLIS_OTEL_REDACT_PROMPTS` | when not `false`, `redaction.ShouldRedact` returns true for denylisted GenAI content keys | unset (treated as enabled) |
