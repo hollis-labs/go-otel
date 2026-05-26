@@ -74,7 +74,10 @@ API reference: <https://pkg.go.dev/github.com/hollis-labs/go-otel>
 ### Top-level package `hotel`
 
 - `Init(ctx, opts...) (shutdown, err)` — installs an OTLP HTTP TracerProvider and W3C+Baggage propagators. With `WithMetricsEnabled`, also installs an OTLP HTTP MeterProvider behind a PeriodicReader. With `WithLogsEnabled`, also installs an OTLP HTTP LoggerProvider behind a BatchProcessor on the global logger provider. With `WithRuntimeMetrics`, starts the upstream Go-runtime instrumentation against the installed MeterProvider.
-- Options: `WithServiceName`, `WithServiceVersion`, `WithServiceNamespace`, `WithEnvironment`, `WithOTLPEndpoint` (default `localhost:4318`), `WithSampler`, `WithMetricsEnabled` (default OFF), `WithRuntimeMetrics` (default OFF; requires `WithMetricsEnabled`), `WithLogsEnabled` (default OFF).
+- Options: `WithServiceName`, `WithServiceVersion`, `WithServiceNamespace`, `WithEnvironment`, `WithOTLPEndpoint` (default `localhost:4318`), `WithSampler`, `WithMetricsEnabled` (default OFF), `WithRuntimeMetrics` (default OFF; requires `WithMetricsEnabled`), `WithLogsEnabled` (default OFF), `WithResourceDetectors(...resource.Option)` (default empty).
+- `DefaultDetectors() []resource.Option` — baseline detectors (host, OS, process, container) that don't make network calls. Pair with `WithResourceDetectors(DefaultDetectors()...)` for sensible default resource attribution.
+- `NotifyShutdown() (ctx, stop)` — convenience wrapper around `signal.NotifyContext` bound to SIGTERM, SIGINT, and os.Interrupt.
+- `ShutdownWithTimeout(shutdown, timeout)` — calls shutdown with a fresh `context.Background()` bounded by the given timeout. Suitable for use inside `defer`.
 - `StartSpan(ctx, name, opts...)` — wraps the global tracer.
 - `AgentStepSpan(ctx, step)` — `hollis.agent.step` span with `hollis.agent.step.name` attribute.
 - `ToolCallSpan(ctx, tool)` — `hollis.tool.call` span with `hollis.tool.name` attribute.

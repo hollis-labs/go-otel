@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/hollis-labs/go-otel/internal"
@@ -17,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
@@ -34,6 +37,7 @@ type config struct {
 	metricExportInterval time.Duration
 	logsEnabled          bool
 	runtimeMetrics       bool
+	resourceOptions      []resource.Option
 }
 
 // defaultMetricExportInterval matches the SDK default; surfaced as a constant
@@ -66,7 +70,10 @@ func Init(ctx context.Context, opts ...Option) (shutdown func(context.Context) e
 		cfg.sampler = sdktrace.AlwaysSample()
 	}
 
-	res, err := internal.NewResource(cfg.serviceName, cfg.serviceVersion, cfg.serviceNamespace, cfg.environment)
+	res, err := internal.NewResource(ctx,
+		cfg.serviceName, cfg.serviceVersion, cfg.serviceNamespace, cfg.environment,
+		cfg.resourceOptions...,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -238,6 +245,85 @@ func WithRuntimeMetrics() Option {
 // SDK).
 func WithLogsEnabled() Option {
 	return func(c *config) { c.logsEnabled = true }
+}
+
+// WithResourceDetectors merges attributes produced by the given
+// resource.Option values into the Resource attached to every installed
+// provider (traces, metrics, logs). Use this to add host, OS, process,
+// container, k8s, or cloud detection.
+//
+// Pair with DefaultDetectors() for a sensible baseline:
+//
+//	hotel.Init(ctx,
+//	    hotel.WithMetricsEnabled(),
+//	    hotel.WithResourceDetectors(hotel.DefaultDetectors()...),
+//	)
+//
+// Service-identity attributes (service.name, service.version,
+// service.namespace, deployment.environment) always win over detector
+// output so misconfigured detectors can't silently rename your service.
+func WithResourceDetectors(opts ...resource.Option) Option {
+	return func(c *config) {
+		c.resourceOptions = append(c.resourceOptions, opts...)
+	}
+}
+
+// DefaultDetectors returns a baseline set of upstream resource options
+// that populate host, OS, process, and container attributes from the
+// local environment without any network calls:
+//
+//   - resource.WithHost() — host.name, host.id, host.arch
+//   - resource.WithOS() — os.type, os.description
+//   - resource.WithProcess() — process.pid, process.executable.name,
+//     process.command_args, process.owner, process.runtime.{name,version,
+//     description}
+//   - resource.WithContainer() — container.id when running inside a
+//     container (reads /proc/self/cgroup; silently empty otherwise)
+//
+// Cloud (AWS, GCP, Azure) and k8s detectors are NOT included because they
+// can issue metadata-server requests with their own timeout semantics;
+// add them explicitly when running in those environments via additional
+// WithResourceDetectors calls.
+func DefaultDetectors() []resource.Option {
+	return []resource.Option{
+		resource.WithHost(),
+		resource.WithOS(),
+		resource.WithProcess(),
+		resource.WithContainer(),
+	}
+}
+
+// NotifyShutdown returns a context that's canceled when SIGTERM, SIGINT,
+// or os.Interrupt fires. Pair with Init to wire graceful shutdown using
+// idiomatic Go signal handling:
+//
+//	ctx, stop := hotel.NotifyShutdown()
+//	defer stop()
+//
+//	shutdown, err := hotel.Init(ctx, ...)
+//	if err != nil { log.Fatal(err) }
+//	defer hotel.ShutdownWithTimeout(shutdown, 5*time.Second)
+//
+//	runServer(ctx) // returns when ctx is canceled
+//
+// The returned cancel function should be called via defer to release the
+// signal handler (matches signal.NotifyContext).
+func NotifyShutdown() (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, os.Interrupt)
+}
+
+// ShutdownWithTimeout calls shutdown with a fresh context.Background()
+// bounded by the given timeout. Suitable for use inside defer:
+//
+//	defer hotel.ShutdownWithTimeout(shutdown, 5*time.Second)
+//
+// Use this when the shutdown happens during process teardown — the
+// regular request/operation context is no longer suitable since it may
+// already be canceled (e.g., when NotifyShutdown's context fires).
+func ShutdownWithTimeout(shutdown func(context.Context) error, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return shutdown(ctx)
 }
 
 func envOr(key, fallback string) string {

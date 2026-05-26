@@ -8,6 +8,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 While the project is pre-1.0 (v0.x), minor releases may contain backward-incompatible
 changes; breaking changes are always called out under "Changed" or "Removed".
 
+## [v0.6.0] — 2026-05-26
+
+Closes the inbox follow-up list with two bootstrap conveniences:
+signal-aware shutdown helpers and resource-detector support. Additive
+over v0.5.0; service-identity attributes still win over detector output
+so misconfigured detectors can't silently rename your service.
+
+### Added
+- `WithResourceDetectors(opts ...resource.Option) Option` merges
+  attributes produced by upstream `resource.Option` values into the
+  Resource attached to every installed provider (traces, metrics, logs).
+  Use to add host, OS, process, container, k8s, or cloud detection.
+- `DefaultDetectors() []resource.Option` returns a baseline set of
+  upstream resource options that populate host/OS/process/container
+  attributes from the local environment without any network calls:
+  - `resource.WithHost()` — `host.name`, `host.id`, `host.arch`
+  - `resource.WithOS()` — `os.type`, `os.description`
+  - `resource.WithProcess()` — `process.pid`,
+    `process.executable.name`, `process.command_args`, `process.owner`,
+    `process.runtime.{name,version,description}`
+  - `resource.WithContainer()` — `container.id` when running inside a
+    container (silently empty otherwise)
+
+  Cloud (AWS/GCP/Azure) and k8s detectors are NOT included because they
+  can issue metadata-server requests with their own timeout semantics;
+  callers add those explicitly when running in those environments.
+- `NotifyShutdown() (ctx, stop)` — convenience wrapper around
+  `signal.NotifyContext` bound to SIGTERM, SIGINT, and `os.Interrupt`.
+  Returns a context that's canceled on signal and a stop function to
+  release the handler.
+- `ShutdownWithTimeout(shutdown, timeout)` — calls shutdown with a
+  fresh `context.Background()` bounded by the given timeout. Suitable
+  for use inside `defer` during process teardown when the regular
+  request/operation context is no longer suitable (already canceled).
+
+### Changed
+- `internal.NewResource` signature gained a leading `ctx context.Context`
+  parameter and a trailing `extras ...resource.Option` variadic. The
+  `internal/` package is not part of the public API; this is documented
+  for completeness only. Public callers see no breakage.
+
 ## [v0.5.0] — 2026-05-26
 
 Two app-bootstrap conveniences bundled per the follow-up plan: Go-runtime
