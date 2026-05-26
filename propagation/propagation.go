@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -13,9 +14,50 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-// HTTPMiddleware returns an http.Handler that extracts W3C traceparent
-// and creates a server span for each request.
-func HTTPMiddleware(next http.Handler) http.Handler {
+// HTTPMetricRecorder is the minimal interface the HTTP middleware uses to
+// emit per-request metrics. It is satisfied by *hotel.Recorder; the
+// interface lives here so the propagation package does not have to import
+// the hotel package (avoiding a circular-dep risk and keeping propagation
+// usable as a standalone surface).
+type HTTPMetricRecorder interface {
+	HTTPRequest(ctx context.Context, route string, statusCode int, d time.Duration)
+}
+
+// MiddlewareOption configures HTTPMiddleware.
+type MiddlewareOption func(*middlewareConfig)
+
+type middlewareConfig struct {
+	recorder      HTTPMetricRecorder
+	routeResolver func(*http.Request) string
+}
+
+// WithMetricRecorder enables per-request metric emission through the given
+// recorder. Each request triggers a call to
+// HTTPRequest(ctx, route, statusCode, duration) after the handler returns.
+// When omitted, the middleware records spans only (legacy behavior).
+func WithMetricRecorder(r HTTPMetricRecorder) MiddlewareOption {
+	return func(c *middlewareConfig) { c.recorder = r }
+}
+
+// WithRouteResolver supplies a function that turns *http.Request into the
+// bounded-cardinality route pattern used as the route label on emitted
+// metrics. Plug in your router's pattern accessor (chi.RouteContext,
+// httprouter.Param, etc.) — using the raw r.URL.Path (the default
+// fallback) is cardinality-unsafe in production and only acceptable for
+// fixed-path APIs.
+func WithRouteResolver(f func(*http.Request) string) MiddlewareOption {
+	return func(c *middlewareConfig) { c.routeResolver = f }
+}
+
+// HTTPMiddleware returns an http.Handler that extracts W3C traceparent and
+// creates a server span for each request. When called with a
+// WithMetricRecorder option, it also emits hollis.http.request.count and
+// hollis.http.request.duration through the recorder.
+func HTTPMiddleware(next http.Handler, opts ...MiddlewareOption) http.Handler {
+	cfg := middlewareConfig{}
+	for _, o := range opts {
+		o(&cfg)
+	}
 	tracer := otel.Tracer("hollis.http")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		prop := otel.GetTextMapPropagator()
@@ -30,12 +72,22 @@ func HTTPMiddleware(next http.Handler) http.Handler {
 			attribute.String("http.target", r.URL.Path),
 		)
 
+		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(sw, r.WithContext(ctx))
+		elapsed := time.Since(start)
 
 		span.SetAttributes(attribute.Int("http.status_code", sw.status))
 		if sw.status >= 500 {
 			span.SetStatus(codes.Error, http.StatusText(sw.status))
+		}
+
+		if cfg.recorder != nil {
+			route := r.URL.Path
+			if cfg.routeResolver != nil {
+				route = cfg.routeResolver(r)
+			}
+			cfg.recorder.HTTPRequest(ctx, route, sw.status, elapsed)
 		}
 	})
 }

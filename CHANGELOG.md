@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 While the project is pre-1.0 (v0.x), minor releases may contain backward-incompatible
 changes; breaking changes are always called out under "Changed" or "Removed".
 
+## [v0.5.0] — 2026-05-26
+
+Two app-bootstrap conveniences bundled per the follow-up plan: Go-runtime
+metrics and auto-instrumented HTTP middleware. Additive over v0.4.0;
+defaults preserve existing behavior.
+
+### Added
+- `WithRuntimeMetrics() Option` starts the upstream OTel Go-runtime
+  instrumentation (`process.runtime.go.*` metrics: GC pause times,
+  goroutine count, memory stats, heap allocations) against the
+  `MeterProvider` installed by `WithMetricsEnabled`. Default OFF. No-op
+  when `WithMetricsEnabled` is absent (the runtime instrumentation
+  registers against the no-op global provider and silently produces
+  nothing); operators can safely combine the two options in any order.
+- `propagation.MiddlewareOption` configuration on `HTTPMiddleware`. The
+  function signature is now variadic: existing callers
+  (`HTTPMiddleware(next)`) continue to work unchanged. New options:
+  - `WithMetricRecorder(r HTTPMetricRecorder)` enables per-request
+    metric emission. Each request triggers
+    `r.HTTPRequest(ctx, route, statusCode, duration)` after the handler
+    returns. Satisfied by `*hotel.Recorder`.
+  - `WithRouteResolver(f func(*http.Request) string)` plugs in your
+    router's pattern accessor to produce the bounded-cardinality `route`
+    label (chi.RouteContext, httprouter.Param, etc.). When omitted, the
+    middleware falls back to `r.URL.Path` — cardinality-unsafe for
+    production, called out in the godoc.
+- `propagation.HTTPMetricRecorder` interface
+  (`HTTPRequest(ctx, route, statusCode, duration)`) — minimal contract
+  the middleware uses, defined in the propagation package so callers can
+  implement it without importing `hotel`.
+
+### Module hygiene
+- Added `go.opentelemetry.io/contrib/instrumentation/runtime` v0.66.0,
+  pinned to the v1.41.0 OTel core line.
+
 ## [v0.4.0] — 2026-05-26
 
 Closes the three-pillar story: traces (v0.1.0) + metrics (v0.2.0) + logs

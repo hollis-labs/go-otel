@@ -8,6 +8,7 @@ import (
 
 	"github.com/hollis-labs/go-otel/internal"
 
+	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
@@ -32,6 +33,7 @@ type config struct {
 	metricsEnabled       bool
 	metricExportInterval time.Duration
 	logsEnabled          bool
+	runtimeMetrics       bool
 }
 
 // defaultMetricExportInterval matches the SDK default; surfaced as a constant
@@ -112,6 +114,15 @@ func Init(ctx context.Context, opts ...Option) (shutdown func(context.Context) e
 		)
 		otel.SetMeterProvider(mp)
 		shutdownFns = append(shutdownFns, mp.Shutdown)
+
+		if cfg.runtimeMetrics {
+			// runtime.Start binds to the meter provider currently installed
+			// on otel.GetMeterProvider, so it must run after the
+			// SetMeterProvider call above. Errors from the runtime
+			// instrumentation are non-fatal — the rest of telemetry is
+			// already up and we don't want a partial init to fail Init.
+			_ = runtime.Start(runtime.WithMeterProvider(mp))
+		}
 	}
 
 	if cfg.logsEnabled {
@@ -196,6 +207,20 @@ func WithSampler(sampler sdktrace.Sampler) Option {
 // SDK).
 func WithMetricsEnabled() Option {
 	return func(c *config) { c.metricsEnabled = true }
+}
+
+// WithRuntimeMetrics starts the upstream OTel Go-runtime instrumentation
+// (process.runtime.go.* metrics: GC pause times, goroutine count, memory
+// stats, heap allocations) against the MeterProvider installed by
+// WithMetricsEnabled.
+//
+// Default OFF. Requires WithMetricsEnabled — if the MeterProvider is the
+// no-op default, the runtime instrumentation registers against it and
+// silently produces nothing. This option is a no-op when
+// WithMetricsEnabled is not set; we don't return an error so callers can
+// safely combine them in any order without ordering land mines.
+func WithRuntimeMetrics() Option {
+	return func(c *config) { c.runtimeMetrics = true }
 }
 
 // WithLogsEnabled installs an OTLP HTTP log exporter and a

@@ -73,8 +73,8 @@ API reference: <https://pkg.go.dev/github.com/hollis-labs/go-otel>
 
 ### Top-level package `hotel`
 
-- `Init(ctx, opts...) (shutdown, err)` — installs an OTLP HTTP TracerProvider and W3C+Baggage propagators. With `WithMetricsEnabled`, also installs an OTLP HTTP MeterProvider behind a PeriodicReader. With `WithLogsEnabled`, also installs an OTLP HTTP LoggerProvider behind a BatchProcessor on the global logger provider.
-- Options: `WithServiceName`, `WithServiceVersion`, `WithServiceNamespace`, `WithEnvironment`, `WithOTLPEndpoint` (default `localhost:4318`), `WithSampler`, `WithMetricsEnabled` (default OFF), `WithLogsEnabled` (default OFF).
+- `Init(ctx, opts...) (shutdown, err)` — installs an OTLP HTTP TracerProvider and W3C+Baggage propagators. With `WithMetricsEnabled`, also installs an OTLP HTTP MeterProvider behind a PeriodicReader. With `WithLogsEnabled`, also installs an OTLP HTTP LoggerProvider behind a BatchProcessor on the global logger provider. With `WithRuntimeMetrics`, starts the upstream Go-runtime instrumentation against the installed MeterProvider.
+- Options: `WithServiceName`, `WithServiceVersion`, `WithServiceNamespace`, `WithEnvironment`, `WithOTLPEndpoint` (default `localhost:4318`), `WithSampler`, `WithMetricsEnabled` (default OFF), `WithRuntimeMetrics` (default OFF; requires `WithMetricsEnabled`), `WithLogsEnabled` (default OFF).
 - `StartSpan(ctx, name, opts...)` — wraps the global tracer.
 - `AgentStepSpan(ctx, step)` — `hollis.agent.step` span with `hollis.agent.step.name` attribute.
 - `ToolCallSpan(ctx, tool)` — `hollis.tool.call` span with `hollis.tool.name` attribute.
@@ -118,7 +118,8 @@ OpenTelemetry GenAI semantic-convention helpers.
 
 ### Sub-package `propagation`
 
-- `HTTPMiddleware(next http.Handler) http.Handler` — server middleware that extracts `traceparent`, starts a server span, and records HTTP attributes/status.
+- `HTTPMiddleware(next http.Handler, opts ...MiddlewareOption) http.Handler` — server middleware that extracts `traceparent`, starts a server span, and records HTTP attributes/status. With `WithMetricRecorder(rec)`, also emits `hollis.http.request.count` / `.duration` per request via `rec.HTTPRequest`. With `WithRouteResolver(fn)`, uses `fn(r)` to compute the bounded-cardinality `route` label (default: `r.URL.Path`, cardinality-unsafe for production).
+- `HTTPMetricRecorder` interface (`HTTPRequest(ctx, route, statusCode, duration)`) — satisfied by `*hotel.Recorder`; defined in the propagation package so it can be implemented without importing `hotel`.
 - `InjectHTTP(ctx, req)` — injects W3C trace context into outgoing HTTP request headers.
 - `ExtractMCP(params)` / `InjectMCP(ctx, params)` — propagation through `_traceparent` / `_tracestate` keys in an MCP-style tool-call params map.
 

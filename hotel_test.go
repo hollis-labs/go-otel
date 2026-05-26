@@ -156,6 +156,68 @@ func TestInitWithoutMetricsDoesNotExportMetrics(t *testing.T) {
 	}
 }
 
+func TestInitWithRuntimeMetricsCoexists(t *testing.T) {
+	counter := &pathCountingServer{}
+	server := httptest.NewServer(counter.handler())
+	t.Cleanup(server.Close)
+
+	endpoint := strings.TrimPrefix(server.URL, "http://")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Pair WithRuntimeMetrics with WithMetricsEnabled — the runtime
+	// instrumentation needs a real MeterProvider to register against.
+	shutdown, err := Init(ctx,
+		WithServiceName("runtime-test-service"),
+		WithOTLPEndpoint(endpoint),
+		WithMetricsEnabled(),
+		WithRuntimeMetrics(),
+	)
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	if err := shutdown(ctx); err != nil {
+		t.Fatalf("shutdown() error = %v", err)
+	}
+
+	if got := counter.metricPosts.Load(); got == 0 {
+		t.Fatalf("expected at least one /v1/metrics POST (runtime instruments register synchronously), got 0")
+	}
+}
+
+func TestInitWithRuntimeMetricsIsNoOpWithoutMetricsEnabled(t *testing.T) {
+	counter := &pathCountingServer{}
+	server := httptest.NewServer(counter.handler())
+	t.Cleanup(server.Close)
+
+	endpoint := strings.TrimPrefix(server.URL, "http://")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Documented contract: WithRuntimeMetrics is a no-op when
+	// WithMetricsEnabled is absent. Must not error, must not panic, must
+	// not emit anything.
+	shutdown, err := Init(ctx,
+		WithServiceName("runtime-noop-test"),
+		WithOTLPEndpoint(endpoint),
+		WithRuntimeMetrics(),
+	)
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	if err := shutdown(ctx); err != nil {
+		t.Fatalf("shutdown() error = %v", err)
+	}
+
+	if got := counter.metricPosts.Load(); got != 0 {
+		t.Fatalf("expected 0 /v1/metrics POSTs without WithMetricsEnabled, got %d", got)
+	}
+}
+
 func TestInitWithLogsEnabledExportsToOTLPLogs(t *testing.T) {
 	counter := &pathCountingServer{}
 	server := httptest.NewServer(counter.handler())

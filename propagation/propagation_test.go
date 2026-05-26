@@ -2,8 +2,11 @@ package propagation
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	otelpropagation "go.opentelemetry.io/otel/propagation"
@@ -76,5 +79,82 @@ func TestInjectHTTPAddsTraceContext(t *testing.T) {
 
 	if got, want := req.Header.Get("traceparent"), "00-"+traceID.String()+"-"+spanID.String()+"-01"; got != want {
 		t.Fatalf("traceparent = %q, want %q", got, want)
+	}
+}
+
+// recordedHTTPCall captures one HTTPRequest invocation for assertions.
+type recordedHTTPCall struct {
+	route string
+	code  int
+	dur   time.Duration
+}
+
+type fakeHTTPRecorder struct {
+	mu    sync.Mutex
+	calls []recordedHTTPCall
+}
+
+func (f *fakeHTTPRecorder) HTTPRequest(_ context.Context, route string, code int, d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, recordedHTTPCall{route: route, code: code, dur: d})
+}
+
+func TestHTTPMiddlewareEmitsMetricsWhenRecorderSet(t *testing.T) {
+	rec := &fakeHTTPRecorder{}
+	handler := HTTPMiddleware(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+		}),
+		WithMetricRecorder(rec),
+		WithRouteResolver(func(*http.Request) string { return "/items/:id" }),
+	)
+
+	req := httptest.NewRequest("GET", "http://example.com/items/42", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if got := len(rec.calls); got != 1 {
+		t.Fatalf("expected 1 recorder call, got %d", got)
+	}
+	call := rec.calls[0]
+	if call.route != "/items/:id" {
+		t.Errorf("route = %q, want %q (resolver should override r.URL.Path)", call.route, "/items/:id")
+	}
+	if call.code != http.StatusAccepted {
+		t.Errorf("status code = %d, want %d", call.code, http.StatusAccepted)
+	}
+	if call.dur < 0 {
+		t.Errorf("duration = %v, want >= 0", call.dur)
+	}
+}
+
+func TestHTTPMiddlewareSkipsMetricsWhenNoRecorder(t *testing.T) {
+	handler := HTTPMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	// Just exercise the path; no recorder option means no metric emission.
+	// The trace-only behavior is unchanged from previous releases.
+	req := httptest.NewRequest("GET", "http://example.com/ok", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Result().StatusCode)
+	}
+}
+
+func TestHTTPMiddlewareFallsBackToURLPathWhenNoResolver(t *testing.T) {
+	rec := &fakeHTTPRecorder{}
+	handler := HTTPMiddleware(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}),
+		WithMetricRecorder(rec),
+		// No WithRouteResolver — should fall back to r.URL.Path.
+	)
+	req := httptest.NewRequest("GET", "http://example.com/raw/path", nil)
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	if rec.calls[0].route != "/raw/path" {
+		t.Errorf("route = %q, want %q (URL.Path fallback)", rec.calls[0].route, "/raw/path")
 	}
 }
