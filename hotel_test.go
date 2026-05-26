@@ -2,8 +2,10 @@ package hotel
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -52,6 +54,7 @@ type pathCountingServer struct {
 	mu          sync.Mutex
 	tracePosts  atomic.Int32
 	metricPosts atomic.Int32
+	logPosts    atomic.Int32
 }
 
 func (p *pathCountingServer) handler() http.Handler {
@@ -64,6 +67,8 @@ func (p *pathCountingServer) handler() http.Handler {
 				p.tracePosts.Add(1)
 			case "/v1/metrics":
 				p.metricPosts.Add(1)
+			case "/v1/logs":
+				p.logPosts.Add(1)
 			}
 		}
 		w.WriteHeader(http.StatusOK)
@@ -148,5 +153,75 @@ func TestInitWithoutMetricsDoesNotExportMetrics(t *testing.T) {
 
 	if got := counter.metricPosts.Load(); got != 0 {
 		t.Fatalf("expected 0 POSTs to /v1/metrics with metrics disabled, got %d", got)
+	}
+}
+
+func TestInitWithLogsEnabledExportsToOTLPLogs(t *testing.T) {
+	counter := &pathCountingServer{}
+	server := httptest.NewServer(counter.handler())
+	t.Cleanup(server.Close)
+
+	endpoint := strings.TrimPrefix(server.URL, "http://")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	shutdown, err := Init(ctx,
+		WithServiceName("logs-test-service"),
+		WithServiceVersion("0.0.1"),
+		WithEnvironment("test"),
+		WithOTLPEndpoint(endpoint),
+		WithLogsEnabled(),
+	)
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	// Emit a log record through the fan-out slog handler. The OTLP side
+	// runs through the global LoggerProvider that Init just installed.
+	logger := slog.New(NewSlogHandler("logs-test", slog.NewTextHandler(os.Stderr, nil)))
+	logger.InfoContext(ctx, "smoke log record", slog.String("test", "logs-export"))
+
+	if err := shutdown(ctx); err != nil {
+		t.Fatalf("shutdown() error = %v", err)
+	}
+
+	if got := counter.logPosts.Load(); got == 0 {
+		t.Fatalf("expected at least one POST to /v1/logs, got 0 (trace POSTs = %d)", counter.tracePosts.Load())
+	}
+}
+
+func TestInitWithoutLogsDoesNotExportLogs(t *testing.T) {
+	counter := &pathCountingServer{}
+	server := httptest.NewServer(counter.handler())
+	t.Cleanup(server.Close)
+
+	endpoint := strings.TrimPrefix(server.URL, "http://")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	shutdown, err := Init(ctx,
+		WithServiceName("no-logs-test-service"),
+		WithServiceVersion("0.0.1"),
+		WithEnvironment("test"),
+		WithOTLPEndpoint(endpoint),
+		// Note: WithLogsEnabled deliberately omitted.
+	)
+	if err != nil {
+		t.Fatalf("Init() error = %v", err)
+	}
+
+	// Fan-out handler is safe to use without WithLogsEnabled — the OTLP
+	// side falls through to the no-op global LoggerProvider.
+	logger := slog.New(NewSlogHandler("no-logs-test", slog.NewTextHandler(os.Stderr, nil)))
+	logger.InfoContext(ctx, "should not export over OTLP")
+
+	if err := shutdown(ctx); err != nil {
+		t.Fatalf("shutdown() error = %v", err)
+	}
+
+	if got := counter.logPosts.Load(); got != 0 {
+		t.Fatalf("expected 0 POSTs to /v1/logs with logs disabled, got %d", got)
 	}
 }

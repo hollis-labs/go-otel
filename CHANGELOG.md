@@ -8,6 +8,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 While the project is pre-1.0 (v0.x), minor releases may contain backward-incompatible
 changes; breaking changes are always called out under "Changed" or "Removed".
 
+## [v0.4.0] — 2026-05-26
+
+Closes the three-pillar story: traces (v0.1.0) + metrics (v0.2.0) + logs
+(this release). Additive over v0.3.0; default OFF.
+
+### Added
+- `WithLogsEnabled() Option` installs an OTLP HTTP log exporter behind a
+  `BatchProcessor`-backed `LoggerProvider` on the global logger provider.
+  Endpoint resolution matches the trace + metric exporters: explicit
+  `WithOTLPEndpoint` wins, otherwise `OTEL_EXPORTER_OTLP_ENDPOINT`,
+  otherwise `localhost:4318`. The same endpoint serves `/v1/traces`,
+  `/v1/metrics`, and `/v1/logs`. BatchProcessor tunables (queue size,
+  schedule delay, export timeout) are read from the SDK-standard
+  `OTEL_BLRP_*` environment variables.
+- `NewSlogHandler(scopeName string, stderrInner slog.Handler) slog.Handler`
+  — fan-out `slog.Handler` that emits each record to two destinations:
+  - `NewLogHandler(stderrInner)` for the existing stderr pretty-print
+    path with `trace_id` / `span_id` injection.
+  - `otelslog.NewHandler(scopeName)` for OTLP export through whatever
+    `LoggerProvider` is currently installed. With `WithLogsEnabled`, that's
+    the exporter wired up by Init; without it, the OTel no-op provider
+    silently discards records.
+  Use this when you want stderr logs AND OTLP log export from the same
+  `slog.Logger`.
+
+### Changed
+- `Init` shutdown now also flushes the `LoggerProvider` when logs are
+  enabled. Per-provider errors continue to be joined via `errors.Join`.
+
+### Module hygiene
+- Added `go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp`
+  v0.17.0, `go.opentelemetry.io/otel/sdk/log` v0.17.0,
+  `go.opentelemetry.io/otel/log` v0.17.0, and
+  `go.opentelemetry.io/contrib/bridges/otelslog` v0.16.0. All pinned to
+  the v1.41.0 OTel core line for stack coherence.
+
 ## [v0.3.0] — 2026-05-26
 
 Additive follow-up to v0.2.0. Ships the `Recorder` helper layer so callers

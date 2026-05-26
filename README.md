@@ -73,15 +73,16 @@ API reference: <https://pkg.go.dev/github.com/hollis-labs/go-otel>
 
 ### Top-level package `hotel`
 
-- `Init(ctx, opts...) (shutdown, err)` — installs an OTLP HTTP TracerProvider and W3C+Baggage propagators. With `WithMetricsEnabled`, also installs an OTLP HTTP MeterProvider behind a PeriodicReader.
-- Options: `WithServiceName`, `WithServiceVersion`, `WithServiceNamespace`, `WithEnvironment`, `WithOTLPEndpoint` (default `localhost:4318`), `WithSampler`, `WithMetricsEnabled` (default OFF).
+- `Init(ctx, opts...) (shutdown, err)` — installs an OTLP HTTP TracerProvider and W3C+Baggage propagators. With `WithMetricsEnabled`, also installs an OTLP HTTP MeterProvider behind a PeriodicReader. With `WithLogsEnabled`, also installs an OTLP HTTP LoggerProvider behind a BatchProcessor on the global logger provider.
+- Options: `WithServiceName`, `WithServiceVersion`, `WithServiceNamespace`, `WithEnvironment`, `WithOTLPEndpoint` (default `localhost:4318`), `WithSampler`, `WithMetricsEnabled` (default OFF), `WithLogsEnabled` (default OFF).
 - `StartSpan(ctx, name, opts...)` — wraps the global tracer.
 - `AgentStepSpan(ctx, step)` — `hollis.agent.step` span with `hollis.agent.step.name` attribute.
 - `ToolCallSpan(ctx, tool)` — `hollis.tool.call` span with `hollis.tool.name` attribute.
 - `MemoryReadSpan(ctx, namespace, key)` / `MemoryWriteSpan(ctx, namespace, key)` — `hollis.memory.read` / `hollis.memory.write` spans.
 - `RegisterMetrics(meter) (*Metrics, error)` — registers the `hollis.*` instrument set (HTTP request count/duration, agent turn duration, tool call count/duration, message count/duration, SSE active connections / reconnects, queue depth, provider input/output tokens, context-window token-budget usage). Cardinality discipline: labels are bounded (`app`, `route`, `status_code`, `provider`, `model`, `kind`, `result`, `tool_name`, `stream_type`, `queue_name`, `runtime_kind`); session/task/agent/message IDs are trace-only and must not be attached.
 - `RegisterRecorder(meter, app) (*Recorder, error)` / `NewRecorder(metrics, app)` — wraps `*Metrics` with a bound `app` label and exposes typed helpers per instrument family so call sites don't re-implement label discipline (which labels go on count vs duration, the +1/-1 SSE connection-gauge dance, the signed `QueueDepth` delta, the shared input/output token-counter labels). Methods: `HTTPRequest`, `AgentTurn`, `ToolCall`, `Message`, `ProviderTokens`, `ContextTokenBudget`, `SSEConnectionOpened` / `SSEConnectionClosed` / `SSEReconnect`, `QueueDepth`. Use `Recorder.Metrics()` for direct instrument access when you need a label shape the recorder doesn't cover.
-- `NewLogHandler(inner slog.Handler) slog.Handler` — wraps an `slog.Handler` to inject `trace_id` and `span_id` from context.
+- `NewLogHandler(inner slog.Handler) slog.Handler` — wraps an `slog.Handler` to inject `trace_id` and `span_id` from context. Stderr-only.
+- `NewSlogHandler(scopeName, stderrInner) slog.Handler` — fan-out handler that wraps `stderrInner` with `NewLogHandler` AND emits to the OTel slog bridge bound to `scopeName`. When `Init` was called with `WithLogsEnabled`, the OTLP side flows through the installed LoggerProvider; otherwise it falls through to the no-op global provider and discards records. Use this when you want stderr logs AND OTLP log export from the same `slog.Logger`.
 
 #### Recorder example
 
@@ -144,6 +145,7 @@ your own attribute schema.
 | `OTEL_SERVICE_NAMESPACE` | service.namespace resource attribute (omitted when empty) | `""` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP exporter endpoint (used for both `/v1/traces` and, when metrics are enabled, `/v1/metrics`) | `localhost:4318` |
 | `OTEL_METRIC_EXPORT_INTERVAL` | PeriodicReader interval for the metric exporter (read by the SDK; only meaningful when `WithMetricsEnabled`) | `15s` |
+| `OTEL_BLRP_SCHEDULE_DELAY` / `OTEL_BLRP_EXPORT_TIMEOUT` / `OTEL_BLRP_MAX_QUEUE_SIZE` / `OTEL_BLRP_MAX_EXPORT_BATCH_SIZE` | BatchProcessor tuning for the log exporter (read by the SDK; only meaningful when `WithLogsEnabled`) | SDK defaults |
 | `HOLLIS_OTEL_REDACT_PROMPTS` | when not `false`, `redaction.ShouldRedact` returns true for denylisted GenAI content keys | unset (treated as enabled) |
 
 Options passed to `Init` always take precedence over environment variables.

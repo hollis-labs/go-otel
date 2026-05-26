@@ -9,9 +9,12 @@ import (
 	"github.com/hollis-labs/go-otel/internal"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	otellog "go.opentelemetry.io/otel/log/global"
 	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -28,18 +31,22 @@ type config struct {
 	sampler              sdktrace.Sampler
 	metricsEnabled       bool
 	metricExportInterval time.Duration
+	logsEnabled          bool
 }
 
 // defaultMetricExportInterval matches the SDK default; surfaced as a constant
 // so the no-export smoke test and downstream operators can rely on it.
 const defaultMetricExportInterval = 15 * time.Second
 
-// Init sets up a trace provider with an OTLP HTTP exporter and, when
-// WithMetricsEnabled is supplied, an OTLP HTTP metric exporter behind a
-// PeriodicReader-backed MeterProvider.
+// Init sets up a trace provider with an OTLP HTTP exporter and, when the
+// corresponding option is supplied, an OTLP HTTP metric exporter behind a
+// PeriodicReader-backed MeterProvider (WithMetricsEnabled) and/or an
+// OTLP HTTP log exporter behind a BatchProcessor-backed LoggerProvider
+// (WithLogsEnabled).
 //
 // It reads from standard OTel env vars and applies any Option overrides.
-// The returned shutdown function flushes and shuts down both providers.
+// The returned shutdown function flushes and shuts down every provider
+// it installed.
 func Init(ctx context.Context, opts ...Option) (shutdown func(context.Context) error, err error) {
 	cfg := config{
 		serviceName:          envOr("OTEL_SERVICE_NAME", ""),
@@ -107,6 +114,28 @@ func Init(ctx context.Context, opts ...Option) (shutdown func(context.Context) e
 		shutdownFns = append(shutdownFns, mp.Shutdown)
 	}
 
+	if cfg.logsEnabled {
+		logExporter, err := otlploghttp.New(ctx,
+			otlploghttp.WithEndpoint(cfg.otlpEndpoint),
+			otlploghttp.WithInsecure(),
+		)
+		if err != nil {
+			// Best-effort cleanup of providers we've already installed.
+			for _, fn := range shutdownFns {
+				_ = fn(ctx)
+			}
+			return nil, err
+		}
+
+		processor := sdklog.NewBatchProcessor(logExporter)
+		lp := sdklog.NewLoggerProvider(
+			sdklog.WithProcessor(processor),
+			sdklog.WithResource(res),
+		)
+		otellog.SetLoggerProvider(lp)
+		shutdownFns = append(shutdownFns, lp.Shutdown)
+	}
+
 	return func(ctx context.Context) error {
 		var errs []error
 		for _, fn := range shutdownFns {
@@ -167,6 +196,23 @@ func WithSampler(sampler sdktrace.Sampler) Option {
 // SDK).
 func WithMetricsEnabled() Option {
 	return func(c *config) { c.metricsEnabled = true }
+}
+
+// WithLogsEnabled installs an OTLP HTTP log exporter and a
+// BatchProcessor-backed LoggerProvider on the global logger provider, so
+// log records emitted via the OTel log API (and the slog bridge exposed
+// by NewSlogHandler) are exported alongside traces and metrics.
+//
+// Default OFF. Endpoint resolution matches the trace/metric exporters:
+// WithOTLPEndpoint takes precedence; otherwise OTEL_EXPORTER_OTLP_ENDPOINT;
+// otherwise localhost:4318. The same endpoint serves /v1/traces,
+// /v1/metrics, and /v1/logs.
+//
+// The BatchProcessor batches log records before export; operators can tune
+// it via the SDK-standard OTEL_BLRP_* environment variables (read by the
+// SDK).
+func WithLogsEnabled() Option {
+	return func(c *config) { c.logsEnabled = true }
 }
 
 func envOr(key, fallback string) string {
