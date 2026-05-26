@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 While the project is pre-1.0 (v0.x), minor releases may contain backward-incompatible
 changes; breaking changes are always called out under "Changed" or "Removed".
 
+## [v0.6.1] — 2026-05-26
+
+Docs-only patch release. No code or behavior changes — cut so the
+refreshed package godoc lands on pkg.go.dev.
+
+### Changed
+- README opening blurb expanded to describe the three-pillar story
+  (traces, opt-in metrics, opt-in logs), the Recorder layer, runtime
+  metrics, auto-instrumented HTTP middleware, resource detectors, and
+  signal-aware shutdown helpers. Previously stopped at the v0.2.0
+  surface (traces + opt-in metrics).
+- `doc.go` package preamble rewritten to cover the v0.3.0–v0.6.0
+  additions (Recorder, `WithLogsEnabled`, `WithRuntimeMetrics`,
+  `WithResourceDetectors`, `DefaultDetectors`, `NotifyShutdown`,
+  `ShutdownWithTimeout`).
+- `OTEL_EXPORTER_OTLP_ENDPOINT` env var row in the README clarified to
+  note it serves `/v1/logs` when `WithLogsEnabled`.
+
 ## [v0.6.0] — 2026-05-26
 
 Closes the inbox follow-up list with two bootstrap conveniences:
