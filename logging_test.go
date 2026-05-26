@@ -1,4 +1,4 @@
-package feotel
+package hotel
 
 import (
 	"context"

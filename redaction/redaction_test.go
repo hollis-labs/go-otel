@@ -3,7 +3,7 @@ package redaction
 import "testing"
 
 func TestShouldRedactDefaults(t *testing.T) {
-	t.Setenv("FE_OTEL_REDACT_PROMPTS", "")
+	t.Setenv("HOLLIS_OTEL_REDACT_PROMPTS", "")
 
 	if !ShouldRedact("gen_ai.content.prompt") {
 		t.Fatal("prompt content should be redacted by default")
@@ -17,10 +17,10 @@ func TestShouldRedactDefaults(t *testing.T) {
 }
 
 func TestShouldRedactCanBeDisabled(t *testing.T) {
-	t.Setenv("FE_OTEL_REDACT_PROMPTS", "false")
+	t.Setenv("HOLLIS_OTEL_REDACT_PROMPTS", "false")
 
 	if ShouldRedact("gen_ai.content.prompt") {
-		t.Fatal("redaction should be disabled when FE_OTEL_REDACT_PROMPTS=false")
+		t.Fatal("redaction should be disabled when HOLLIS_OTEL_REDACT_PROMPTS=false")
 	}
 }
 

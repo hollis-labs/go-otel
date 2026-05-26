@@ -16,7 +16,7 @@ import (
 // HTTPMiddleware returns an http.Handler that extracts W3C traceparent
 // and creates a server span for each request.
 func HTTPMiddleware(next http.Handler) http.Handler {
-	tracer := otel.Tracer("fe.http")
+	tracer := otel.Tracer("hollis.http")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		prop := otel.GetTextMapPropagator()
 		ctx := prop.Extract(r.Context(), propagation.HeaderCarrier(r.Header))

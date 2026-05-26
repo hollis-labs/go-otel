@@ -1,7 +1,7 @@
 // Command hello is a minimal example that demonstrates the go-otel
 // instrumentation surface using a stdout exporter (no collector required).
 //
-// It creates a root span via feotel.StartSpan, opens a child span using the
+// It creates a root span via hotel.StartSpan, opens a child span using the
 // genai sub-package's ModelCallSpan helper, records token usage and a model
 // latency histogram, and prints both spans as JSON via the stdout exporter.
 package main
@@ -12,7 +12,7 @@ import (
 	"log"
 	"time"
 
-	feotel "github.com/hollis-labs/go-otel"
+	"github.com/hollis-labs/go-otel"
 	"github.com/hollis-labs/go-otel/genai"
 
 	"go.opentelemetry.io/otel"
@@ -36,13 +36,13 @@ func main() {
 		}
 	}()
 
-	// In a real service you would call feotel.Init here to install the
+	// In a real service you would call hotel.Init here to install the
 	// OTLP HTTP exporter and propagators; this example wires up a stdout
 	// TracerProvider directly so it can run with no collector.
-	_ = feotel.WithServiceName("hello")
+	_ = hotel.WithServiceName("hello")
 
 	// Create a root span.
-	ctx, rootSpan := feotel.StartSpan(ctx, "hello.request")
+	ctx, rootSpan := hotel.StartSpan(ctx, "hello.request")
 	defer rootSpan.End()
 
 	// Create a GenAI model call child span.

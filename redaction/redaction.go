@@ -21,7 +21,7 @@ func Denylist() []string {
 // ShouldRedact reports whether the provided attribute key should be removed
 // before export.
 func ShouldRedact(key string) bool {
-	return shouldRedact(os.Getenv("FE_OTEL_REDACT_PROMPTS"), key)
+	return shouldRedact(os.Getenv("HOLLIS_OTEL_REDACT_PROMPTS"), key)
 }
 
 // SpanProcessor returns a processor shell that preserves the denylist
@@ -29,7 +29,7 @@ func ShouldRedact(key string) bool {
 // immutable; callers should consult ShouldRedact before export.
 func SpanProcessor() sdktrace.SpanProcessor {
 	return &redactProcessor{
-		enabled: shouldRedactEnabled(os.Getenv("FE_OTEL_REDACT_PROMPTS")),
+		enabled: shouldRedactEnabled(os.Getenv("HOLLIS_OTEL_REDACT_PROMPTS")),
 		deny:    denylistSet(),
 	}
 }
