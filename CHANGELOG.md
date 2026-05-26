@@ -8,6 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 While the project is pre-1.0 (v0.x), minor releases may contain backward-incompatible
 changes; breaking changes are always called out under "Changed" or "Removed".
 
+## [v0.3.0] — 2026-05-26
+
+Additive follow-up to v0.2.0. Ships the `Recorder` helper layer so callers
+don't have to bake instrument-specific label discipline into every emit
+site, and don't have to refactor twice (once for the v0.2.0 `Metrics`
+struct rename, again for the recorder).
+
+### Added
+- `Recorder` type that wraps `*Metrics` with a bound `app` label and
+  exposes typed helpers per instrument family:
+  - `HTTPRequest(ctx, route, statusCode, duration)`
+  - `AgentTurn(ctx, provider, runtimeKind, result, duration)`
+  - `ToolCall(ctx, toolName, result, duration)` — hits both
+    `hollis.tool.call.count` (with `result`) and
+    `hollis.tool.call.duration` (without `result`) with the correct labels.
+  - `Message(ctx, kind, result, duration)` — same asymmetric label-shape
+    handling for `hollis.message.*`.
+  - `ProviderTokens(ctx, provider, model, inputTokens, outputTokens)` —
+    records both `hollis.provider.tokens.input` and `.output` with the
+    shared `app, provider, model` label set.
+  - `ContextTokenBudget(ctx, provider, model, tokensUsed)`
+  - `SSEConnectionOpened(ctx, streamType)` /
+    `SSEConnectionClosed(ctx, streamType)` — +1 / −1 on the
+    `hollis.sse.active_connections` UpDownCounter.
+  - `SSEReconnect(ctx, streamType)`
+  - `QueueDepth(ctx, queueName, delta int64)` — signed delta, so callers
+    can model "drained N at once" without looping.
+- `NewRecorder(metrics, app) *Recorder` wraps an existing `*Metrics`.
+- `RegisterRecorder(meter, app) (*Recorder, error)` is the one-step
+  convenience that calls `RegisterMetrics` then wraps.
+- `Recorder.Metrics() *Metrics` escape hatch returns the underlying
+  instruments for callers that need a label shape the recorder doesn't
+  cover. `Recorder.App() string` returns the bound app label.
+
 ## [v0.2.0] — 2026-05-26
 
 This release adds opt-in metrics export over OTLP and renames the Go

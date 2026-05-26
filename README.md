@@ -80,7 +80,31 @@ API reference: <https://pkg.go.dev/github.com/hollis-labs/go-otel>
 - `ToolCallSpan(ctx, tool)` — `hollis.tool.call` span with `hollis.tool.name` attribute.
 - `MemoryReadSpan(ctx, namespace, key)` / `MemoryWriteSpan(ctx, namespace, key)` — `hollis.memory.read` / `hollis.memory.write` spans.
 - `RegisterMetrics(meter) (*Metrics, error)` — registers the `hollis.*` instrument set (HTTP request count/duration, agent turn duration, tool call count/duration, message count/duration, SSE active connections / reconnects, queue depth, provider input/output tokens, context-window token-budget usage). Cardinality discipline: labels are bounded (`app`, `route`, `status_code`, `provider`, `model`, `kind`, `result`, `tool_name`, `stream_type`, `queue_name`, `runtime_kind`); session/task/agent/message IDs are trace-only and must not be attached.
+- `RegisterRecorder(meter, app) (*Recorder, error)` / `NewRecorder(metrics, app)` — wraps `*Metrics` with a bound `app` label and exposes typed helpers per instrument family so call sites don't re-implement label discipline (which labels go on count vs duration, the +1/-1 SSE connection-gauge dance, the signed `QueueDepth` delta, the shared input/output token-counter labels). Methods: `HTTPRequest`, `AgentTurn`, `ToolCall`, `Message`, `ProviderTokens`, `ContextTokenBudget`, `SSEConnectionOpened` / `SSEConnectionClosed` / `SSEReconnect`, `QueueDepth`. Use `Recorder.Metrics()` for direct instrument access when you need a label shape the recorder doesn't cover.
 - `NewLogHandler(inner slog.Handler) slog.Handler` — wraps an `slog.Handler` to inject `trace_id` and `span_id` from context.
+
+#### Recorder example
+
+```go
+rec, err := hotel.RegisterRecorder(otel.Meter("my-app"), "my-app")
+if err != nil {
+    log.Fatal(err)
+}
+
+// HTTP middleware path:
+rec.HTTPRequest(ctx, route, statusCode, time.Since(start))
+
+// Tool call from an agent loop:
+rec.ToolCall(ctx, "memory_write", "ok", time.Since(start))
+
+// Token accounting after a model call:
+rec.ProviderTokens(ctx, "anthropic", "claude-opus-4-7", inputTokens, outputTokens)
+rec.ContextTokenBudget(ctx, "anthropic", "claude-opus-4-7", contextUsed)
+
+// SSE connection lifecycle:
+rec.SSEConnectionOpened(ctx, "agent_events")
+defer rec.SSEConnectionClosed(ctx, "agent_events")
+```
 
 ### Sub-package `genai`
 
