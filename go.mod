@@ -1,6 +1,6 @@
 module github.com/hollis-labs/go-otel
 
-go 1.26.1
+go 1.26.6
 
 require (
 	go.opentelemetry.io/contrib/bridges/otelslog v0.16.0
