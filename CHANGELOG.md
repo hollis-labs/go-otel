@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 While the project is pre-1.0 (v0.x), minor releases may contain backward-incompatible
 changes; breaking changes are always called out under "Changed" or "Removed".
 
+## [v0.8.0] — Unreleased
+
+### Added
+
+- `InitOrWarn(ctx, logf, timeout, opts...) (shutdown func())` — `Init` plus the
+  glue every app wrote around it. On failure it reports through `logf` and
+  returns a no-op shutdown, so `defer shutdown()` is always safe; on success the
+  returned shutdown is already bound to `ShutdownWithTimeout(_, timeout)`, so a
+  hung exporter flush can no longer hang process exit, and a shutdown error is
+  logged rather than dropped. `logf` matches `log.Printf`. It does not decide
+  whether telemetry is enabled: an app's own enable/disable gate stays around
+  the call.
+- `EnvironmentFromEnv(appEnvVar, fallback) string` — resolves the deployment
+  environment for `WithEnvironment`: `HOLLIS_ENV`, then `appEnvVar` (pass `""`
+  to skip), then `fallback`; values are trimmed and blank counts as unset. This
+  is the precedence Tether and Hadron already share; Torque's own copy is
+  reversed (its app var wins, default `dev`) and is not changed by this release.
+
+No existing symbol changes.
+
 ## [v0.7.0] — 2026-09-29
 
 ### Changed

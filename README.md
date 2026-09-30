@@ -81,6 +81,8 @@ API reference: <https://pkg.go.dev/github.com/hollis-labs/go-otel>
 - `DefaultDetectors() []resource.Option` — baseline detectors (host, OS, process, container) that don't make network calls. Pair with `WithResourceDetectors(DefaultDetectors()...)` for sensible default resource attribution.
 - `NotifyShutdown() (ctx, stop)` — convenience wrapper around `signal.NotifyContext` bound to SIGTERM, SIGINT, and os.Interrupt.
 - `ShutdownWithTimeout(shutdown, timeout)` — calls shutdown with a fresh `context.Background()` bounded by the given timeout. Suitable for use inside `defer`.
+- `InitOrWarn(ctx, logf, timeout, opts...) (shutdown func())` — `Init` with the surrounding glue: a failure is reported through `logf` (matches `log.Printf`) and yields a no-op shutdown, and a successful shutdown is bound to `ShutdownWithTimeout(_, timeout)` so a hung exporter cannot hang process exit. Does not decide whether telemetry is enabled.
+- `EnvironmentFromEnv(appEnvVar, fallback)` — deployment-environment tag for `WithEnvironment`: `HOLLIS_ENV`, then `appEnvVar` (`""` skips it), then `fallback`; values trimmed, blank counts as unset.
 - `StartSpan(ctx, name, opts...)` — wraps the global tracer.
 - `AgentStepSpan(ctx, step)` — `hollis.agent.step` span with `hollis.agent.step.name` attribute.
 - `ToolCallSpan(ctx, tool)` — `hollis.tool.call` span with `hollis.tool.name` attribute.
