@@ -11,6 +11,9 @@ import (
 const testAppVar = "TESTAPP_OTEL_ENABLED"
 
 func TestEnabledFromEnv(t *testing.T) {
+	// Presence-based precedence: a non-blank HOLLIS_OTEL_ENABLED decides alone
+	// (truthy enables, anything else disables) and the app var is ignored; a
+	// unset/blank global defers to the app var. Disabled is the floor.
 	tests := []struct {
 		name      string
 		global    *string // nil = unset
@@ -18,36 +21,53 @@ func TestEnabledFromEnv(t *testing.T) {
 		appEnvVar string
 		want      bool
 	}{
-		{"nothing set", nil, nil, testAppVar, false},
-		{"global alone truthy", sp("1"), nil, testAppVar, true},
-		{"global alone true", sp("true"), nil, "", true},
-		{"app alone 1", nil, sp("1"), testAppVar, true},
-		{"app alone true", nil, sp("true"), testAppVar, true},
-		{"app alone yes", nil, sp("yes"), testAppVar, true},
-		{"app alone on", nil, sp("on"), testAppVar, true},
-		{"app alone upper TRUE", nil, sp("TRUE"), testAppVar, true},
-		{"app alone mixed Yes", nil, sp("Yes"), testAppVar, true},
-		{"app alone ON", nil, sp("ON"), testAppVar, true},
-		{"global upper case", sp("True"), nil, testAppVar, true},
-		{"app falsey 0", nil, sp("0"), testAppVar, false},
-		{"app falsey false", nil, sp("false"), testAppVar, false},
-		{"app falsey no", nil, sp("no"), testAppVar, false},
-		{"app falsey off", nil, sp("off"), testAppVar, false},
-		{"app empty", nil, sp(""), testAppVar, false},
-		{"app blank", nil, sp("   "), testAppVar, false},
-		{"global falsey", sp("false"), nil, testAppVar, false},
-		{"global empty", sp(""), nil, testAppVar, false},
-		{"garbage global", sp("banana"), nil, testAppVar, false},
-		{"garbage app", nil, sp("banana"), testAppVar, false},
-		{"garbage both", sp("2"), sp("enabled"), testAppVar, false},
-		{"y and t are not truthy", sp("y"), sp("t"), testAppVar, false},
-		{"both truthy", sp("1"), sp("1"), testAppVar, true},
+		// Global unset: app tier decides.
+		{"global unset app unset", nil, nil, testAppVar, false},
+		{"global unset app 1", nil, sp("1"), testAppVar, true},
+		{"global unset app true", nil, sp("true"), testAppVar, true},
+		{"global unset app yes", nil, sp("yes"), testAppVar, true},
+		{"global unset app on", nil, sp("on"), testAppVar, true},
+		{"global unset app TRUE", nil, sp("TRUE"), testAppVar, true},
+		{"global unset app Yes", nil, sp("Yes"), testAppVar, true},
+		{"global unset app ON", nil, sp("ON"), testAppVar, true},
+		{"global unset app padded", nil, sp("  on \n"), testAppVar, true},
+		{"global unset app false", nil, sp("false"), testAppVar, false},
+		{"global unset app 0", nil, sp("0"), testAppVar, false},
+		{"global unset app garbage", nil, sp("banana"), testAppVar, false},
+		{"global unset app blank", nil, sp("  "), testAppVar, false},
+		{"global unset app y/t not truthy", nil, sp("y"), testAppVar, false},
+		// Global blank / whitespace-only counts as unset: falls through.
+		{"global empty app true", sp(""), sp("true"), testAppVar, true},
+		{"global empty app false", sp(""), sp("false"), testAppVar, false},
+		{"global empty app unset", sp(""), nil, testAppVar, false},
+		{"global whitespace app true", sp(" \t "), sp("true"), testAppVar, true},
+		{"global whitespace app garbage", sp("   "), sp("banana"), testAppVar, false},
+		{"global whitespace app unset", sp("   "), nil, testAppVar, false},
+		// Global truthy decides: enabled regardless of app.
+		{"global 1 app unset", sp("1"), nil, testAppVar, true},
 		{"global true app false", sp("true"), sp("false"), testAppVar, true},
-		// Either tier can enable; a falsey value never vetoes the other tier.
-		{"global false app true", sp("false"), sp("true"), testAppVar, true},
-		{"global garbage app true", sp("banana"), sp("on"), testAppVar, true},
-		{"empty appEnvVar skips app tier", nil, sp("1"), "", false},
-		{"empty appEnvVar still honors global", sp("1"), sp("0"), "", true},
+		{"global yes app garbage", sp("yes"), sp("banana"), testAppVar, true},
+		{"global on app true", sp("on"), sp("true"), testAppVar, true},
+		{"global TRUE app unset", sp("TRUE"), nil, testAppVar, true},
+		{"global Yes padded app 0", sp("  Yes "), sp("0"), testAppVar, true},
+		// Global falsey / garbage decides: disabled, app ignored (veto).
+		{"global false app true", sp("false"), sp("true"), testAppVar, false},
+		{"global 0 app true", sp("0"), sp("1"), testAppVar, false},
+		{"global off app on", sp("off"), sp("on"), testAppVar, false},
+		{"global FALSE app yes", sp("FALSE"), sp("yes"), testAppVar, false},
+		{"global false padded app true", sp(" false "), sp("true"), testAppVar, false},
+		{"global false app unset", sp("false"), nil, testAppVar, false},
+		{"global garbage app true", sp("banana"), sp("true"), testAppVar, false},
+		{"global 2 app on", sp("2"), sp("on"), testAppVar, false},
+		{"global y app true", sp("y"), sp("true"), testAppVar, false},
+		{"global garbage app unset", sp("banana"), nil, testAppVar, false},
+		// appEnvVar == "" skips the app tier.
+		{"empty appEnvVar global unset", nil, sp("1"), "", false},
+		{"empty appEnvVar global blank", sp(" "), sp("1"), "", false},
+		{"empty appEnvVar global true", sp("1"), sp("0"), "", true},
+		{"empty appEnvVar global false", sp("false"), sp("1"), "", false},
+		{"empty appEnvVar global garbage", sp("banana"), nil, "", false},
+		{"unset named appEnvVar", nil, sp("1"), "SOME_OTHER_UNSET_VAR_XYZ", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,7 +100,8 @@ func TestEnabledFromEnv_TrimsWhitespace(t *testing.T) {
 }
 
 // TestEnabledFromEnv_DisabledIsTheFloor proves there is no path to "enabled"
-// from unset, empty or unparseable input: opt-in is the only way on.
+// from unset, empty or unparseable input, in either tier and any combination:
+// opt-in is the only way on.
 func TestEnabledFromEnv_DisabledIsTheFloor(t *testing.T) {
 	junk := []string{"", " ", "0", "false", "no", "off", "banana", "2", "-1", "truee", "1.0", "enabled", "null", "y", "t"}
 	for _, g := range junk {

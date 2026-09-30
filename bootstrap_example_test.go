@@ -25,8 +25,9 @@ func ExampleEnvironmentFromEnv() {
 }
 
 func ExampleEnabledFromEnv() {
-	// Opt-in: disabled unless HOLLIS_OTEL_ENABLED or MYAPP_OTEL_ENABLED is
-	// set to 1/true/yes/on. Nothing set means disabled.
+	// Opt-in: disabled unless enabled with 1/true/yes/on. Nothing set means
+	// disabled; MYAPP_OTEL_ENABLED counts only while HOLLIS_OTEL_ENABLED is
+	// unset or blank.
 	os.Unsetenv("HOLLIS_OTEL_ENABLED")
 	os.Unsetenv("MYAPP_OTEL_ENABLED")
 	fmt.Println(hotel.EnabledFromEnv("MYAPP_OTEL_ENABLED"))
@@ -34,7 +35,13 @@ func ExampleEnabledFromEnv() {
 	os.Setenv("MYAPP_OTEL_ENABLED", "yes")
 	defer os.Unsetenv("MYAPP_OTEL_ENABLED")
 	fmt.Println(hotel.EnabledFromEnv("MYAPP_OTEL_ENABLED"))
+
+	// A set HOLLIS_OTEL_ENABLED decides alone: false vetoes the app variable.
+	os.Setenv("HOLLIS_OTEL_ENABLED", "false")
+	defer os.Unsetenv("HOLLIS_OTEL_ENABLED")
+	fmt.Println(hotel.EnabledFromEnv("MYAPP_OTEL_ENABLED"))
 	// Output:
 	// false
 	// true
+	// false
 }

@@ -57,15 +57,21 @@ func EnvironmentFromEnv(appEnvVar, fallback string) string {
 
 // EnabledFromEnv reports whether telemetry should be initialized, under the
 // opt-in policy every hollis-labs app follows: disabled unless explicitly
-// turned on. HOLLIS_OTEL_ENABLED (portfolio-wide) is consulted first, then
-// appEnvVar (an app-specific override, for example "MYAPP_OTEL_ENABLED"; pass
-// "" to skip this tier). Both accept "1", "true", "yes" and "on",
-// case-insensitively, after trimming whitespace.
+// turned on.
+//
+// Precedence is presence-based. If HOLLIS_OTEL_ENABLED (portfolio-wide) is set
+// to a non-blank value (after trimming whitespace), that value decides
+// outright and appEnvVar is not consulted: "1", "true", "yes" and "on"
+// (case-insensitive) enable; anything else, including garbage and falsey
+// values, disables. That makes HOLLIS_OTEL_ENABLED a portfolio-wide kill
+// switch: HOLLIS_OTEL_ENABLED=false wins over MYAPP_OTEL_ENABLED=true.
+//
+// Only when HOLLIS_OTEL_ENABLED is unset or blank is appEnvVar (an
+// app-specific override, for example "MYAPP_OTEL_ENABLED"; pass "" to skip
+// this tier) checked, with the same truthy parsing.
 //
 // Unlike EnvironmentFromEnv there is no fallback parameter: the floor is
-// always "disabled". Unset, empty, unparseable and falsey values all mean
-// disabled, and a falsey value in one tier does not veto a truthy value in
-// the other: either tier can turn telemetry on, neither can force it off.
+// always "disabled". Unset, empty, unparseable and falsey values never enable.
 //
 // The result only reports the gate. Init and InitOrWarn do not consult it;
 // gating stays the caller's job:
@@ -74,11 +80,13 @@ func EnvironmentFromEnv(appEnvVar, fallback string) string {
 //		defer hotel.InitOrWarn(ctx, log.Printf, 5*time.Second, opts...)()
 //	}
 func EnabledFromEnv(appEnvVar string) bool {
-	if truthy(trimmedEnv("HOLLIS_OTEL_ENABLED")) {
-		return true
+	if v, ok := os.LookupEnv("HOLLIS_OTEL_ENABLED"); ok {
+		if v = strings.TrimSpace(v); v != "" {
+			return truthy(v)
+		}
 	}
-	if appEnvVar != "" && truthy(trimmedEnv(appEnvVar)) {
-		return true
+	if appEnvVar != "" {
+		return truthy(trimmedEnv(appEnvVar))
 	}
 	return false
 }

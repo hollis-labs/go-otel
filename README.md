@@ -83,7 +83,7 @@ API reference: <https://pkg.go.dev/github.com/hollis-labs/go-otel>
 - `ShutdownWithTimeout(shutdown, timeout)` — calls shutdown with a fresh `context.Background()` bounded by the given timeout. Suitable for use inside `defer`.
 - `InitOrWarn(ctx, logf, timeout, opts...) (shutdown func())` — `Init` with the surrounding glue: a failure is reported through `logf` (matches `log.Printf`) and yields a no-op shutdown, and a successful shutdown is bound to `ShutdownWithTimeout(_, timeout)` so a hung exporter cannot hang process exit. Does not decide whether telemetry is enabled.
 - `EnvironmentFromEnv(appEnvVar, fallback)` — deployment-environment tag for `WithEnvironment`: `HOLLIS_ENV`, then `appEnvVar` (`""` skips it), then `fallback`; values trimmed, blank counts as unset.
-- `EnabledFromEnv(appEnvVar) bool` — opt-in telemetry gate: true only when `HOLLIS_OTEL_ENABLED` or `appEnvVar` (`""` skips it) is `1`/`true`/`yes`/`on` (case-insensitive, trimmed). No fallback: unset, empty, unparseable and falsey are all disabled, and a falsey tier never vetoes a truthy one. `Init`/`InitOrWarn` do not call it; see [Opt-in gate](#opt-in-gate-enabledfromenv).
+- `EnabledFromEnv(appEnvVar) bool` — opt-in telemetry gate with presence-based precedence: if `HOLLIS_OTEL_ENABLED` is set non-blank (trimmed) it decides alone (`1`/`true`/`yes`/`on`, case-insensitive, enables; anything else disables) and `appEnvVar` is ignored; only when it is unset or blank is `appEnvVar` (`""` skips it) checked. No fallback: disabled is the floor. `Init`/`InitOrWarn` do not call it; see [Opt-in gate](#opt-in-gate-enabledfromenv).
 - `StartSpan(ctx, name, opts...)` — wraps the global tracer.
 - `AgentStepSpan(ctx, step)` — `hollis.agent.step` span with `hollis.agent.step.name` attribute.
 - `ToolCallSpan(ctx, tool)` — `hollis.tool.call` span with `hollis.tool.name` attribute.
@@ -108,9 +108,12 @@ if hotel.EnabledFromEnv("MYAPP_OTEL_ENABLED") {
 ```
 
 ```bash
-HOLLIS_OTEL_ENABLED=1 myapp          # on for every hollis app
-MYAPP_OTEL_ENABLED=yes myapp         # on for this app only
-myapp                                # off (also off for "", "0", "false", garbage)
+HOLLIS_OTEL_ENABLED=1 myapp                          # on
+MYAPP_OTEL_ENABLED=yes myapp                         # on (global unset)
+HOLLIS_OTEL_ENABLED=false MYAPP_OTEL_ENABLED=yes myapp  # OFF: a set global decides alone
+HOLLIS_OTEL_ENABLED=banana MYAPP_OTEL_ENABLED=yes myapp # OFF: garbage global still decides
+HOLLIS_OTEL_ENABLED=" " MYAPP_OTEL_ENABLED=yes myapp    # on: blank global falls through
+myapp                                                # off (also off for "", "0", garbage)
 ```
 
 Findings from reading (not running) the apps' source when this was added: Loom already gates opt-in (bare `OTEL_ENABLED` / `LOOM_OTEL_ENABLED`); Tether, Nanite and Torque gate opt-out (`*_OTEL_DISABLED`), so adopting this flips their default and needs owner sign-off; **Nil, Hadron and Tesseract have no telemetry gate today** and call `Init` unconditionally.
@@ -178,7 +181,7 @@ your own attribute schema.
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP exporter endpoint (serves `/v1/traces` always, plus `/v1/metrics` when `WithMetricsEnabled` and `/v1/logs` when `WithLogsEnabled`) | `localhost:4318` |
 | `OTEL_METRIC_EXPORT_INTERVAL` | PeriodicReader interval for the metric exporter (read by the SDK; only meaningful when `WithMetricsEnabled`) | `15s` |
 | `OTEL_BLRP_SCHEDULE_DELAY` / `OTEL_BLRP_EXPORT_TIMEOUT` / `OTEL_BLRP_MAX_QUEUE_SIZE` / `OTEL_BLRP_MAX_EXPORT_BATCH_SIZE` | BatchProcessor tuning for the log exporter (read by the SDK; only meaningful when `WithLogsEnabled`) | SDK defaults |
-| `HOLLIS_OTEL_ENABLED` | read by `EnabledFromEnv` only (never by `Init`): `1`/`true`/`yes`/`on` turns the caller's telemetry gate on | unset (disabled) |
+| `HOLLIS_OTEL_ENABLED` | read by `EnabledFromEnv` only (never by `Init`): `1`/`true`/`yes`/`on` when set non-blank, decides the gate alone: `1`/`true`/`yes`/`on` on, anything else off (a portfolio-wide kill switch that overrides app vars); blank/unset defers to the app var | unset (disabled) |
 | `HOLLIS_OTEL_REDACT_PROMPTS` | when not `false`, `redaction.ShouldRedact` returns true for denylisted GenAI content keys | unset (treated as enabled) |
 
 Options passed to `Init` always take precedence over environment variables.
