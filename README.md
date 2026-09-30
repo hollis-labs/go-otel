@@ -181,7 +181,7 @@ your own attribute schema.
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP exporter endpoint (serves `/v1/traces` always, plus `/v1/metrics` when `WithMetricsEnabled` and `/v1/logs` when `WithLogsEnabled`) | `localhost:4318` |
 | `OTEL_METRIC_EXPORT_INTERVAL` | PeriodicReader interval for the metric exporter (read by the SDK; only meaningful when `WithMetricsEnabled`) | `15s` |
 | `OTEL_BLRP_SCHEDULE_DELAY` / `OTEL_BLRP_EXPORT_TIMEOUT` / `OTEL_BLRP_MAX_QUEUE_SIZE` / `OTEL_BLRP_MAX_EXPORT_BATCH_SIZE` | BatchProcessor tuning for the log exporter (read by the SDK; only meaningful when `WithLogsEnabled`) | SDK defaults |
-| `HOLLIS_OTEL_ENABLED` | read by `EnabledFromEnv` only (never by `Init`): `1`/`true`/`yes`/`on` when set non-blank, decides the gate alone: `1`/`true`/`yes`/`on` on, anything else off (a portfolio-wide kill switch that overrides app vars); blank/unset defers to the app var | unset (disabled) |
+| `HOLLIS_OTEL_ENABLED` | read by `EnabledFromEnv` only (never by `Init`): when set non-blank it decides the gate alone (`1`/`true`/`yes`/`on` on, anything else off), acting as a portfolio-wide kill switch that overrides app vars; blank/unset defers to the app var | unset (disabled) |
 | `HOLLIS_OTEL_REDACT_PROMPTS` | when not `false`, `redaction.ShouldRedact` returns true for denylisted GenAI content keys | unset (treated as enabled) |
 
 Options passed to `Init` always take precedence over environment variables.
