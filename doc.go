@@ -34,6 +34,14 @@
 // by Init in a fresh deadline-bounded context for use in defer. Together
 // they cover the common graceful-shutdown shape.
 //
+// EnabledFromEnv is the opt-in gate for callers: it reports true only when
+// HOLLIS_OTEL_ENABLED, when set non-blank, decides alone (1/true/yes/on
+// enables, anything else disables, and the app variable is ignored); only when
+// it is unset or blank is the app-specific variable checked. Disabled is the
+// floor; there is no fallback. Init does not consult it. Read from source, not
+// run: Loom already gates opt-in; Tether, Nanite and Torque gate opt-out; Nil,
+// Hadron and Tesseract have no gate.
+//
 // Sub-packages cover additional surfaces:
 //
 //   - genai: OpenTelemetry GenAI semantic-convention helpers

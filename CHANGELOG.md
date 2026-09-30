@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 While the project is pre-1.0 (v0.x), minor releases may contain backward-incompatible
 changes; breaking changes are always called out under "Changed" or "Removed".
 
+## [v0.9.0] — 2026-09-30
+
+### Added
+
+- `EnabledFromEnv(appEnvVar) bool` — the opt-in telemetry gate, generalized from
+  Loom's already-conforming `enabled()`. Telemetry is off unless explicitly
+  turned on. Precedence is presence-based, **not a plain OR**: if
+  `HOLLIS_OTEL_ENABLED` is set to a non-blank value (whitespace-trimmed) it
+  decides outright and `appEnvVar` is not consulted (`1`/`true`/`yes`/`on`,
+  case-insensitive, enable; anything else, garbage included, disables), so
+  `HOLLIS_OTEL_ENABLED=false` vetoes `MYAPP_OTEL_ENABLED=true`. Only when the
+  global is unset or blank is `appEnvVar` checked (pass `""` to skip), with the
+  same parsing. There is no fallback parameter: unset, empty, unparseable and
+  falsey never enable. This resolves the previously gated `app-otel-bootstrap`
+  candidate (distinct from the v0.8.0 `InitOrWarn`/`EnvironmentFromEnv` work).
+  `Init` and `InitOrWarn` do not consult it; gating stays the caller's job.
+  Read, not run, in the apps' source today: Loom already gates opt-in (bare
+  `OTEL_ENABLED` / `LOOM_OTEL_ENABLED`, so adopting `HOLLIS_OTEL_ENABLED`
+  renames its variable); Tether, Nanite and Torque gate opt-out; Nil, Hadron
+  and Tesseract have no gate at all and call `Init` unconditionally.
+
+No existing symbol changes.
+
 ## [v0.8.0] — 2026-09-29
 
 ### Added
