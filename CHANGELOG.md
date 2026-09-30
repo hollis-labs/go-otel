@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 While the project is pre-1.0 (v0.x), minor releases may contain backward-incompatible
 changes; breaking changes are always called out under "Changed" or "Removed".
 
+## [v0.10.0] — 2026-09-30
+
+### Added
+
+- `propagation.InjectMCPMeta(ctx, meta) map[string]any` and
+  `propagation.ExtractMCPMeta(ctx, meta) context.Context` — trace-context
+  propagation through an MCP request's `_meta` object (the protocol-correct
+  location; `arguments` is a tool's own input and strict schemas reject extra
+  keys). Promoted and generalized from Tether's
+  `internal/mcpadapter/trace_meta.go`, operating on a bare `map[string]any`
+  (the go-sdk's `mcp.Meta` underlying type) so go-otel takes no MCP SDK
+  dependency. Wire keys are the bare `_traceparent` / `_tracestate` (portfolio
+  `_meta` convention, tier 1). `InjectMCPMeta` returns a copy and never mutates
+  the caller's map; other `_meta` keys are preserved; an invalid span context
+  returns `meta` unchanged. `ExtractMCPMeta` preserves the caller's context
+  (v0.7.0 semantics) and ignores non-string values. Both are `_meta`-only: there
+  is deliberately no `arguments` fallback (no dual-write bridge); Tether keeps
+  its own transitional fallback. W3C baggage has no `_meta` key and is not
+  carried.
+
+### Deprecated
+
+- `propagation.InjectMCP` and `propagation.ExtractMCP` (trace context in tool
+  `arguments`) are deprecated in favor of `InjectMCPMeta` / `ExtractMCPMeta`.
+  Behavior and signatures are unchanged and they are not removed.
+
 ## [v0.9.0] — 2026-09-30
 
 ### Added

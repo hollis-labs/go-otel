@@ -155,7 +155,13 @@ OpenTelemetry GenAI semantic-convention helpers.
 - `HTTPMiddleware(next http.Handler, opts ...MiddlewareOption) http.Handler` — server middleware that extracts `traceparent`, starts a server span, and records HTTP attributes/status. With `WithMetricRecorder(rec)`, also emits `hollis.http.request.count` / `.duration` per request via `rec.HTTPRequest`. With `WithRouteResolver(fn)`, uses `fn(r)` to compute the bounded-cardinality `route` label (default: `r.URL.Path`, cardinality-unsafe for production).
 - `HTTPMetricRecorder` interface (`HTTPRequest(ctx, route, statusCode, duration)`) — satisfied by `*hotel.Recorder`; defined in the propagation package so it can be implemented without importing `hotel`.
 - `InjectHTTP(ctx, req)` — injects W3C trace context into outgoing HTTP request headers.
-- `ExtractMCP(ctx, params)` / `InjectMCP(ctx, params)` — propagation through `_traceparent` / `_tracestate` keys in an MCP-style tool-call params map.
+- `ExtractMCP(ctx, params)` / `InjectMCP(ctx, params)` — propagation through `_traceparent` / `_tracestate` keys in an MCP-style tool-call params map. **Deprecated** in favor of the `_meta` pair below.
+- `InjectMCPMeta(ctx, meta map[string]any) map[string]any` / `ExtractMCPMeta(ctx, meta map[string]any) context.Context` — the same W3C trace context carried in an MCP request's `_meta` object under the bare keys `_traceparent` / `_tracestate`, the protocol-correct location. `InjectMCPMeta` returns a copy (the caller's map is not modified) and keeps unrelated `_meta` keys; `ExtractMCPMeta` preserves the caller's context. `_meta` only: neither reads or writes tool `arguments`. Baggage is not carried. The go-sdk's `mcp.Meta` is a `map[string]any`, so convert with `map[string]any(params.Meta)` and back:
+
+  ```go
+  params.Meta = mcp.Meta(propagation.InjectMCPMeta(ctx, params.Meta))   // client
+  ctx = propagation.ExtractMCPMeta(ctx, req.Params.Meta)                 // server
+  ```
 
 ### Sub-package `redaction`
 

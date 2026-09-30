@@ -47,7 +47,9 @@
 //   - genai: OpenTelemetry GenAI semantic-convention helpers
 //   - propagation: HTTP middleware (optionally auto-instrumented for
 //     metrics via WithMetricRecorder / WithRouteResolver), HTTP injection,
-//     MCP-style propagation
+//     MCP trace propagation through the request _meta object
+//     (InjectMCPMeta / ExtractMCPMeta; the arguments-based InjectMCP /
+//     ExtractMCP are deprecated)
 //   - redaction: denylist helpers for sensitive prompt/completion
 //     attributes
 //
