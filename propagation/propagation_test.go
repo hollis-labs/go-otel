@@ -41,7 +41,7 @@ func TestInjectAndExtractMCP(t *testing.T) {
 		t.Fatalf("_traceparent = %v, want %v", got, want)
 	}
 
-	gotCtx := ExtractMCP(params)
+	gotCtx := ExtractMCP(context.Background(), params)
 	gotSC := trace.SpanContextFromContext(gotCtx)
 	if gotSC.TraceID() != traceID {
 		t.Fatalf("traceID = %s, want %s", gotSC.TraceID(), traceID)
@@ -156,5 +156,70 @@ func TestHTTPMiddlewareFallsBackToURLPathWhenNoResolver(t *testing.T) {
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 	if rec.calls[0].route != "/raw/path" {
 		t.Errorf("route = %q, want %q (URL.Path fallback)", rec.calls[0].route, "/raw/path")
+	}
+}
+
+type ctxKey struct{}
+
+// ExtractMCP must build on the caller's ctx. It used to start from
+// context.Background(), so a handler that wrote `ctx = ExtractMCP(args)` got the
+// remote SpanContext but lost cancellation, its deadline and every value the MCP
+// server had put on ctx.
+func TestExtractMCPPreservesCallerContext(t *testing.T) {
+	prev := otel.GetTextMapPropagator()
+	t.Cleanup(func() { otel.SetTextMapPropagator(prev) })
+	otel.SetTextMapPropagator(otelpropagation.NewCompositeTextMapPropagator(
+		otelpropagation.TraceContext{}, otelpropagation.Baggage{},
+	))
+
+	traceID, _ := trace.TraceIDFromHex("0102030405060708090a0b0c0d0e0f10")
+	spanID, _ := trace.SpanIDFromHex("0102030405060708")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID, TraceFlags: trace.FlagsSampled})
+	params := InjectMCP(trace.ContextWithSpanContext(context.Background(), sc), nil)
+
+	deadline := time.Now().Add(time.Hour)
+	parent, cancelDeadline := context.WithDeadline(context.WithValue(context.Background(), ctxKey{}, "sentinel"), deadline)
+	defer cancelDeadline()
+	ctx, cancel := context.WithCancel(parent)
+
+	got := ExtractMCP(ctx, params)
+
+	if v, _ := got.Value(ctxKey{}).(string); v != "sentinel" {
+		t.Errorf("caller's context value lost: got %q", v)
+	}
+	if d, ok := got.Deadline(); !ok || !d.Equal(deadline) {
+		t.Errorf("caller's deadline lost: got %v, %v", d, ok)
+	}
+	if trace.SpanContextFromContext(got).TraceID() != traceID {
+		t.Error("remote trace context not extracted")
+	}
+
+	select {
+	case <-got.Done():
+		t.Fatal("returned ctx is already done before the caller canceled")
+	default:
+	}
+	cancel()
+	select {
+	case <-got.Done():
+	case <-time.After(time.Second):
+		t.Fatal("canceling the caller's ctx is not observable on the ctx ExtractMCP returned")
+	}
+}
+
+// With no propagator configured, extraction recovers no trace context, but it
+// must still hand back the caller's own ctx.
+func TestExtractMCPWithoutPropagatorKeepsCallerContext(t *testing.T) {
+	prev := otel.GetTextMapPropagator()
+	t.Cleanup(func() { otel.SetTextMapPropagator(prev) })
+	otel.SetTextMapPropagator(otelpropagation.NewCompositeTextMapPropagator())
+
+	ctx := context.WithValue(context.Background(), ctxKey{}, "sentinel")
+	got := ExtractMCP(ctx, map[string]interface{}{"_traceparent": "00-0102030405060708090a0b0c0d0e0f10-0102030405060708-01"})
+	if v, _ := got.Value(ctxKey{}).(string); v != "sentinel" {
+		t.Errorf("caller's context value lost with no propagator: got %q", v)
+	}
+	if trace.SpanContextFromContext(got).IsValid() {
+		t.Error("a trace context appeared with no propagator configured")
 	}
 }
