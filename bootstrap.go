@@ -55,6 +55,43 @@ func EnvironmentFromEnv(appEnvVar, fallback string) string {
 	return fallback
 }
 
+// EnabledFromEnv reports whether telemetry should be initialized, under the
+// opt-in policy every hollis-labs app follows: disabled unless explicitly
+// turned on. HOLLIS_OTEL_ENABLED (portfolio-wide) is consulted first, then
+// appEnvVar (an app-specific override, for example "MYAPP_OTEL_ENABLED"; pass
+// "" to skip this tier). Both accept "1", "true", "yes" and "on",
+// case-insensitively, after trimming whitespace.
+//
+// Unlike EnvironmentFromEnv there is no fallback parameter: the floor is
+// always "disabled". Unset, empty, unparseable and falsey values all mean
+// disabled, and a falsey value in one tier does not veto a truthy value in
+// the other: either tier can turn telemetry on, neither can force it off.
+//
+// The result only reports the gate. Init and InitOrWarn do not consult it;
+// gating stays the caller's job:
+//
+//	if hotel.EnabledFromEnv("MYAPP_OTEL_ENABLED") {
+//		defer hotel.InitOrWarn(ctx, log.Printf, 5*time.Second, opts...)()
+//	}
+func EnabledFromEnv(appEnvVar string) bool {
+	if truthy(trimmedEnv("HOLLIS_OTEL_ENABLED")) {
+		return true
+	}
+	if appEnvVar != "" && truthy(trimmedEnv(appEnvVar)) {
+		return true
+	}
+	return false
+}
+
+func truthy(v string) bool {
+	switch strings.ToLower(v) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
 func trimmedEnv(key string) string {
 	return strings.TrimSpace(os.Getenv(key))
 }

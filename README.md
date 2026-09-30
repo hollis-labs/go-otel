@@ -83,6 +83,7 @@ API reference: <https://pkg.go.dev/github.com/hollis-labs/go-otel>
 - `ShutdownWithTimeout(shutdown, timeout)` — calls shutdown with a fresh `context.Background()` bounded by the given timeout. Suitable for use inside `defer`.
 - `InitOrWarn(ctx, logf, timeout, opts...) (shutdown func())` — `Init` with the surrounding glue: a failure is reported through `logf` (matches `log.Printf`) and yields a no-op shutdown, and a successful shutdown is bound to `ShutdownWithTimeout(_, timeout)` so a hung exporter cannot hang process exit. Does not decide whether telemetry is enabled.
 - `EnvironmentFromEnv(appEnvVar, fallback)` — deployment-environment tag for `WithEnvironment`: `HOLLIS_ENV`, then `appEnvVar` (`""` skips it), then `fallback`; values trimmed, blank counts as unset.
+- `EnabledFromEnv(appEnvVar) bool` — opt-in telemetry gate: true only when `HOLLIS_OTEL_ENABLED` or `appEnvVar` (`""` skips it) is `1`/`true`/`yes`/`on` (case-insensitive, trimmed). No fallback: unset, empty, unparseable and falsey are all disabled, and a falsey tier never vetoes a truthy one. `Init`/`InitOrWarn` do not call it; see [Opt-in gate](#opt-in-gate-enabledfromenv).
 - `StartSpan(ctx, name, opts...)` — wraps the global tracer.
 - `AgentStepSpan(ctx, step)` — `hollis.agent.step` span with `hollis.agent.step.name` attribute.
 - `ToolCallSpan(ctx, tool)` — `hollis.tool.call` span with `hollis.tool.name` attribute.
@@ -91,6 +92,28 @@ API reference: <https://pkg.go.dev/github.com/hollis-labs/go-otel>
 - `RegisterRecorder(meter, app) (*Recorder, error)` / `NewRecorder(metrics, app)` — wraps `*Metrics` with a bound `app` label and exposes typed helpers per instrument family so call sites don't re-implement label discipline (which labels go on count vs duration, the +1/-1 SSE connection-gauge dance, the signed `QueueDepth` delta, the shared input/output token-counter labels). Methods: `HTTPRequest`, `AgentTurn`, `ToolCall`, `Message`, `ProviderTokens`, `ContextTokenBudget`, `SSEConnectionOpened` / `SSEConnectionClosed` / `SSEReconnect`, `QueueDepth`. Use `Recorder.Metrics()` for direct instrument access when you need a label shape the recorder doesn't cover.
 - `NewLogHandler(inner slog.Handler) slog.Handler` — wraps an `slog.Handler` to inject `trace_id` and `span_id` from context. Stderr-only.
 - `NewSlogHandler(scopeName, stderrInner) slog.Handler` — fan-out handler that wraps `stderrInner` with `NewLogHandler` AND emits to the OTel slog bridge bound to `scopeName`. When `Init` was called with `WithLogsEnabled`, the OTLP side flows through the installed LoggerProvider; otherwise it falls through to the no-op global provider and discards records. Use this when you want stderr logs AND OTLP log export from the same `slog.Logger`.
+
+#### Opt-in gate (`EnabledFromEnv`)
+
+Telemetry is opt-in across hollis-labs apps. `EnabledFromEnv` is the one place that policy lives; the app supplies only its own override variable name and keeps the gate around `InitOrWarn`:
+
+```go
+if hotel.EnabledFromEnv("MYAPP_OTEL_ENABLED") {
+	shutdown := hotel.InitOrWarn(ctx, log.Printf, 5*time.Second,
+		hotel.WithServiceName("myapp"),
+		hotel.WithEnvironment(hotel.EnvironmentFromEnv("MYAPP_ENV", "development")),
+	)
+	defer shutdown()
+}
+```
+
+```bash
+HOLLIS_OTEL_ENABLED=1 myapp          # on for every hollis app
+MYAPP_OTEL_ENABLED=yes myapp         # on for this app only
+myapp                                # off (also off for "", "0", "false", garbage)
+```
+
+Findings from reading (not running) the apps' source when this was added: Loom already gates opt-in (bare `OTEL_ENABLED` / `LOOM_OTEL_ENABLED`); Tether, Nanite and Torque gate opt-out (`*_OTEL_DISABLED`), so adopting this flips their default and needs owner sign-off; **Nil, Hadron and Tesseract have no telemetry gate today** and call `Init` unconditionally.
 
 #### Recorder example
 
@@ -155,6 +178,7 @@ your own attribute schema.
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP exporter endpoint (serves `/v1/traces` always, plus `/v1/metrics` when `WithMetricsEnabled` and `/v1/logs` when `WithLogsEnabled`) | `localhost:4318` |
 | `OTEL_METRIC_EXPORT_INTERVAL` | PeriodicReader interval for the metric exporter (read by the SDK; only meaningful when `WithMetricsEnabled`) | `15s` |
 | `OTEL_BLRP_SCHEDULE_DELAY` / `OTEL_BLRP_EXPORT_TIMEOUT` / `OTEL_BLRP_MAX_QUEUE_SIZE` / `OTEL_BLRP_MAX_EXPORT_BATCH_SIZE` | BatchProcessor tuning for the log exporter (read by the SDK; only meaningful when `WithLogsEnabled`) | SDK defaults |
+| `HOLLIS_OTEL_ENABLED` | read by `EnabledFromEnv` only (never by `Init`): `1`/`true`/`yes`/`on` turns the caller's telemetry gate on | unset (disabled) |
 | `HOLLIS_OTEL_REDACT_PROMPTS` | when not `false`, `redaction.ShouldRedact` returns true for denylisted GenAI content keys | unset (treated as enabled) |
 
 Options passed to `Init` always take precedence over environment variables.
