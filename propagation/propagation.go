@@ -142,6 +142,11 @@ func InjectHTTP(ctx context.Context, req *http.Request) {
 // the MCP protocol's _meta field, which is where the spec puts request
 // metadata. That relocation is tracked separately (CW-20260907-0026) and is not
 // this function's job.
+//
+// Deprecated: use ExtractMCPMeta, which reads the protocol-correct _meta
+// object. Trace context in tool-call arguments is rejected by any tool whose
+// schema sets additionalProperties: false. ExtractMCP is retained unchanged
+// for existing callers.
 func ExtractMCP(ctx context.Context, params map[string]interface{}) context.Context {
 	carrier := propagation.MapCarrier{}
 	if tp, ok := params["_traceparent"].(string); ok {
@@ -154,6 +159,11 @@ func ExtractMCP(ctx context.Context, params map[string]interface{}) context.Cont
 }
 
 // InjectMCP injects trace context into MCP tool call parameters.
+//
+// Deprecated: use InjectMCPMeta, which writes the protocol-correct _meta
+// object. Trace context in tool-call arguments is rejected by any tool whose
+// schema sets additionalProperties: false. InjectMCP is retained unchanged for
+// existing callers.
 func InjectMCP(ctx context.Context, params map[string]interface{}) map[string]interface{} {
 	sc := trace.SpanContextFromContext(ctx)
 	if !sc.IsValid() {
@@ -173,4 +183,79 @@ func InjectMCP(ctx context.Context, params map[string]interface{}) map[string]in
 		params["_tracestate"] = sc.TraceState().String()
 	}
 	return params
+}
+
+// Keys under which W3C trace context travels in an MCP request's _meta object.
+// They are the same bare, underscore-prefixed spellings InjectMCP and
+// ExtractMCP have always used, kept deliberately: changing them would be a
+// multi-repo wire break for no benefit, and the underscore is a harmless
+// redundancy inside _meta. They are the portfolio's "tier 1" (shared-library)
+// key names. W3C baggage has no _meta key and is not carried.
+const (
+	metaTraceparent = "_traceparent"
+	metaTracestate  = "_tracestate"
+)
+
+// InjectMCPMeta returns a copy of meta carrying the trace context of ctx's
+// span in the "_traceparent" (and, when non-empty, "_tracestate") keys. meta is
+// the _meta object of an MCP request (for example the Meta field of the
+// go-sdk's CallToolParams, which is a map[string]any; convert with
+// map[string]any(m) and back). Use the returned map; meta is never modified.
+//
+// Every other key already in meta (for example "hadron/idempotencyKey") is
+// preserved. A nil meta yields a fresh map. If ctx has no valid span context,
+// meta is returned as is (nil stays nil), so an untraced call does not grow an
+// empty _meta. If the span has no tracestate, a stale "_tracestate" copied from
+// meta is dropped so the pair never disagrees.
+//
+// Like InjectMCP, the traceparent is formatted by hand and does not depend on a
+// configured propagator, so it works in a process that never called
+// otel.SetTextMapPropagator. Unlike InjectMCP, it never touches tool-call
+// arguments: trace context belongs in _meta, not in a tool's own input.
+func InjectMCPMeta(ctx context.Context, meta map[string]any) map[string]any {
+	sc := trace.SpanContextFromContext(ctx)
+	if !sc.IsValid() {
+		return meta
+	}
+	out := make(map[string]any, len(meta)+2)
+	for k, v := range meta {
+		out[k] = v
+	}
+	flags := "00"
+	if sc.IsSampled() {
+		flags = "01"
+	}
+	out[metaTraceparent] = fmt.Sprintf("00-%s-%s-%s",
+		sc.TraceID().String(), sc.SpanID().String(), flags)
+	if sc.TraceState().Len() > 0 {
+		out[metaTracestate] = sc.TraceState().String()
+	} else {
+		delete(out, metaTracestate)
+	}
+	return out
+}
+
+// ExtractMCPMeta extracts trace context from an MCP request's _meta object and
+// attaches it to ctx, preserving everything ctx already carries (cancellation,
+// deadlines, other context values). It reads the "_traceparent" and
+// "_tracestate" keys; values that are not strings, and any other keys, are
+// ignored. A nil or empty meta, or an invalid traceparent, leaves ctx without a
+// remote span context. It never panics and never modifies meta.
+//
+// Extraction goes through whichever text-map propagator is configured
+// (otel.SetTextMapPropagator), exactly as ExtractMCP does, and recovers nothing
+// when none is.
+//
+// This reads _meta only. It does not fall back to tool-call arguments: a
+// rollout-compatibility fallback for peers that still write arguments, if an
+// application needs one, belongs in that application, not in this library.
+func ExtractMCPMeta(ctx context.Context, meta map[string]any) context.Context {
+	carrier := propagation.MapCarrier{}
+	if tp, ok := meta[metaTraceparent].(string); ok {
+		carrier.Set("traceparent", tp)
+	}
+	if ts, ok := meta[metaTracestate].(string); ok {
+		carrier.Set("tracestate", ts)
+	}
+	return otel.GetTextMapPropagator().Extract(ctx, carrier)
 }
