@@ -127,7 +127,7 @@ OpenTelemetry GenAI semantic-convention helpers.
 - `HTTPMiddleware(next http.Handler, opts ...MiddlewareOption) http.Handler` — server middleware that extracts `traceparent`, starts a server span, and records HTTP attributes/status. With `WithMetricRecorder(rec)`, also emits `hollis.http.request.count` / `.duration` per request via `rec.HTTPRequest`. With `WithRouteResolver(fn)`, uses `fn(r)` to compute the bounded-cardinality `route` label (default: `r.URL.Path`, cardinality-unsafe for production).
 - `HTTPMetricRecorder` interface (`HTTPRequest(ctx, route, statusCode, duration)`) — satisfied by `*hotel.Recorder`; defined in the propagation package so it can be implemented without importing `hotel`.
 - `InjectHTTP(ctx, req)` — injects W3C trace context into outgoing HTTP request headers.
-- `ExtractMCP(params)` / `InjectMCP(ctx, params)` — propagation through `_traceparent` / `_tracestate` keys in an MCP-style tool-call params map.
+- `ExtractMCP(ctx, params)` / `InjectMCP(ctx, params)` — propagation through `_traceparent` / `_tracestate` keys in an MCP-style tool-call params map.
 
 ### Sub-package `redaction`
 

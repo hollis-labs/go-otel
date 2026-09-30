@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 While the project is pre-1.0 (v0.x), minor releases may contain backward-incompatible
 changes; breaking changes are always called out under "Changed" or "Removed".
 
+## [v0.7.0] — Unreleased
+
+### Changed
+
+- **BREAKING: `propagation.ExtractMCP` now takes the caller's context.**
+  `ExtractMCP(params)` becomes `ExtractMCP(ctx, params)`. The old form built its
+  result from `context.Background()`, so a tool handler that wrote
+  `ctx = ExtractMCP(args)` received the remote trace context but silently lost
+  the request-scoped cancellation, deadline and transport values the MCP server
+  had put on its `ctx`. Torque, Loom and Tether each found this independently
+  and worked around it by hand (Torque bypasses `ExtractMCP` entirely; Loom
+  re-merges the extracted span context onto the real parent; Tether carried the
+  same discard into its own replacement code). There is no zero-context form.
+  Update call sites by passing the handler's `ctx` as the first argument.
+- `InjectMCP` is unchanged, and the `InjectMCP` / `ExtractMCP` asymmetry is now
+  documented on both functions: injection formats the W3C `traceparent` by hand
+  and works with no propagator configured, while extraction reads whichever
+  propagator is configured, so Baggage crosses an HTTP hop but not an MCP hop.
+  The placement of `_traceparent` / `_tracestate` in tool-call `arguments`
+  rather than the MCP `_meta` field is also unchanged and tracked separately.
+
 ## [v0.6.1] — 2026-05-26
 
 Docs-only patch release. No code or behavior changes — cut so the

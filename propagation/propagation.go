@@ -116,9 +116,33 @@ func InjectHTTP(ctx context.Context, req *http.Request) {
 	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
 }
 
-// ExtractMCP extracts trace context from MCP tool call parameters.
-// It looks for a "_traceparent" key in the params map.
-func ExtractMCP(params map[string]interface{}) context.Context {
+// ExtractMCP extracts trace context from an MCP tool call's parameters and
+// attaches it to ctx, preserving everything ctx already carries
+// (cancellation, deadlines, other context values). It looks for the
+// "_traceparent" and "_tracestate" keys in the params map.
+//
+// BREAKING CHANGE (v0.7.0): ExtractMCP used to take only params and return a
+// context built from context.Background(), silently discarding whatever
+// context.Context the caller already had. An MCP server hands every tool
+// handler a live, request-scoped ctx (cancellation driven by the
+// protocol's cancel notification, deadlines, transport-scoped values); replacing it
+// was a defect that three consumers found independently and each worked around
+// by hand. There is no longer a zero-ctx form.
+//
+// InjectMCP and ExtractMCP remain asymmetric: InjectMCP formats a W3C
+// traceparent/tracestate pair by hand regardless of the configured propagator
+// (so it works in a process that never called otel.SetTextMapPropagator, such
+// as a bare stdio MCP child), while ExtractMCP reads whichever propagator IS
+// configured and recovers nothing without one. At least one consumer relies on
+// that deliberately, so it is not changed here; a Baggage member set by
+// hotel.Init's default propagator therefore crosses an HTTP hop but not an MCP
+// hop.
+//
+// Trace context here also still rides in the tool call's arguments map, not in
+// the MCP protocol's _meta field, which is where the spec puts request
+// metadata. That relocation is tracked separately (CW-20260907-0026) and is not
+// this function's job.
+func ExtractMCP(ctx context.Context, params map[string]interface{}) context.Context {
 	carrier := propagation.MapCarrier{}
 	if tp, ok := params["_traceparent"].(string); ok {
 		carrier.Set("traceparent", tp)
@@ -126,7 +150,7 @@ func ExtractMCP(params map[string]interface{}) context.Context {
 	if ts, ok := params["_tracestate"].(string); ok {
 		carrier.Set("tracestate", ts)
 	}
-	return otel.GetTextMapPropagator().Extract(context.Background(), carrier)
+	return otel.GetTextMapPropagator().Extract(ctx, carrier)
 }
 
 // InjectMCP injects trace context into MCP tool call parameters.
